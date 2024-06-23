@@ -1,0 +1,75 @@
+
+#!/bin/bash
+
+# Required parameters:
+# @raycast.schemaVersion 1
+# @raycast.title Uninstall App
+# @raycast.mode fullOutput
+
+# Optional parameters:
+# @raycast.icon 🗑️
+# @raycast.argument1 { "type": "text", "placeholder": "App name" }
+
+# Documentation:
+# @raycast.description Move an application and its related files to the Trash
+
+app_name="$1"
+
+move_to_trash() {
+    local file_path="$1"
+    osascript -e "tell application \"Finder\" to delete POSIX file \"$file_path\"" > /dev/null 2>&1
+}
+
+uninstall_app() {
+    local app_name="$1"
+    
+    if [[ ! "$app_name" =~ \.app$ ]]; then
+        app_name="${app_name}.app"
+    fi
+    
+    local app_paths=$(mdfind "kMDItemKind == 'Application' && kMDItemDisplayName == '${app_name%.*}'")
+    
+    if [ -z "$app_paths" ]; then
+        echo "Application not found. Please check the name and try again."
+        return 1
+    fi
+
+    if [ $(echo "$app_paths" | wc -l) -gt 1 ]; then
+        echo "Multiple applications found:"
+        select app_path in $app_paths; do
+            if [ -n "$app_path" ]; then
+                break
+            fi
+        done
+    else
+        app_path=$app_paths
+    fi
+
+    echo "Are you sure you want to move $app_path to the Trash?"
+    echo "Type 'yes' to confirm:"
+    read confirmation
+    if [ "$confirmation" != "yes" ]; then
+        echo "Uninstallation cancelled."
+        return 1
+    fi
+
+    echo "Moving $app_path to Trash"
+    move_to_trash "$app_path"
+
+    echo "Moving related files to Trash..."
+    local app_identifier=$(mdls -name kMDItemCFBundleIdentifier -r "$app_path")
+    if [ -n "$app_identifier" ]; then
+        find /Library/Application\ Support /Library/Caches /Library/Preferences ~/Library/Application\ Support ~/Library/Caches ~/Library/Preferences -name "*$app_identifier*" -maxdepth 1 -print0 | while IFS= read -r -d '' file; do
+            move_to_trash "$file"
+        done
+    else
+        echo "Couldn't find bundle identifier. Attempting to move files based on app name..."
+        find /Library/Application\ Support /Library/Caches /Library/Preferences ~/Library/Application\ Support ~/Library/Caches ~/Library/Preferences -name "*${app_name%.*}*" -maxdepth 1 -print0 | while IFS= read -r -d '' file; do
+            move_to_trash "$file"
+        done
+    fi
+
+    echo "Uninstallation complete. Files have been moved to the Trash."
+}
+
+uninstall_app "$app_name"

@@ -1,0 +1,23 @@
+#!/bin/bash
+
+# Navigate to your project directory
+cd ~/workshop/sijapi
+
+# Pull the latest changes from the repository
+echo "Pulling from main branch..."
+git pull origin main
+
+# Add changes to the Git index (staging area)
+echo "Adding all changes..."
+git add .
+
+# Commit changes
+echo "Committing changes..."
+git commit -m "Auto-update: $(date)"
+
+# Push changes to the remote repository
+echo "Pushing all changes..."
+git push origin main
+
+echo "Update complete!"
+
