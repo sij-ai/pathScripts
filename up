@@ -1,23 +1,69 @@
 #!/bin/bash
 
-# Navigate to your project directory
-cd ~/workshop/sijapi
+# Path to the file containing the list of repositories
+REPOS_FILE=~/workshop/repos.txt
 
-# Pull the latest changes from the repository
-echo "Pulling from main branch..."
-git pull origin main
+# Check if the repos file exists
+if [ ! -f "$REPOS_FILE" ]; then
+    echo "Error: $REPOS_FILE does not exist."
+    exit 1
+fi
 
-# Add changes to the Git index (staging area)
-echo "Adding all changes..."
-git add .
+# Read the repos file and process each directory
+while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
+    # Trim whitespace
+    repo_path=$(echo "$repo_path" | xargs)
 
-# Commit changes
-echo "Committing changes..."
-git commit -m "Auto-update: $(date)"
+    # Skip empty lines
+    [ -z "$repo_path" ] && continue
 
-# Push changes to the remote repository
-echo "Pushing all changes..."
-git push origin main
+    # Expand tilde to home directory
+    repo_path="${repo_path/#\~/$HOME}"
 
-echo "Update complete!"
+    # Check if the directory exists
+    if [ ! -d "$repo_path" ]; then
+        echo "Warning: Directory $repo_path does not exist. Skipping."
+        continue
+    fi
+
+    echo "Processing repository: $repo_path"
+
+    # Navigate to the project directory
+    cd "$repo_path" || { echo "Error: Unable to change to directory $repo_path"; continue; }
+
+    # Check if it's a git repository
+    if [ ! -d .git ]; then
+        echo "Warning: $repo_path is not a git repository. Skipping."
+        continue
+    fi
+
+    # Get the current branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+    # Pull the latest changes from the repository
+    echo "Pulling from $current_branch branch..."
+    git pull origin "$current_branch"
+
+    # Add changes to the Git index (staging area)
+    echo "Adding all changes..."
+    git add .
+
+    # Check if there are changes to commit
+    if git diff-index --quiet HEAD --; then
+        echo "No changes to commit."
+    else
+        # Commit changes
+        echo "Committing changes..."
+        git commit -m "Auto-update: $(date)"
+
+        # Push changes to the remote repository
+        echo "Pushing all changes..."
+        git push origin "$current_branch"
+    fi
+
+    echo "Update complete for $repo_path!"
+    echo "----------------------------------------"
+done < "$REPOS_FILE"
+
+echo "All repositories processed."
 
