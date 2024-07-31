@@ -1,0 +1,42 @@
+#!/bin/bash
+
+repos_file=~/workshop/repos.txt
+
+# Check if the repos file exists
+if [ ! -f "$repos_file" ]; then
+    echo "Error: $repos_file does not exist."
+    exit 1
+fi
+
+# Read the repos file and process each directory
+while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
+    # Trim whitespace
+    repo_path=$(echo "$repo_path" | xargs)
+
+    # Skip empty lines
+    [ -z "$repo_path" ] && continue
+
+    echo "Processing repository: $repo_path"
+
+    # Navigate to the project directory
+    if ! cd "$repo_path"; then
+        echo "Error: Unable to change to directory $repo_path. Skipping."
+        continue
+    fi
+
+    # Check if it's a git repository
+    if [ ! -d .git ]; then
+        echo "Warning: $repo_path is not a git repository. Skipping."
+        continue
+    fi
+
+    # Force pull the latest changes from the repository
+    echo "Force pulling latest changes..."
+    git pull --force
+
+    echo "Update complete for $repo_path"
+    echo "----------------------------------------"
+done < "$repos_file"
+
+echo "All repositories processed."
+
