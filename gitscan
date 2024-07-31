@@ -1,0 +1,19 @@
+#!/bin/bash
+
+output_file=~/workshop/repos.txt
+
+# Ensure the output directory exists
+mkdir -p "$(dirname "$output_file")"
+
+# Clear the existing file
+> "$output_file"
+
+# Find all .git directories, excluding hidden directories
+find ~/ -type d -name ".git" -not -path "*/.*/*" | while read -r gitdir; do
+    # Get the parent directory of the .git folder
+    repo_path=$(dirname "$gitdir")
+    echo "$repo_path" >> "$output_file"
+done
+
+echo "Git repositories have been written to $output_file"
+
