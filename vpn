@@ -1,29 +1,115 @@
-#!/bin/bash
+#!/usr/bin/env python3
 
-# Get the suggested exit node
-exit_node=$(tailscale exit-node suggest | awk -F': ' '/Suggested exit node/ {print substr($2, 1, length($2)-1)}')
+import subprocess
+import requests
+import argparse
+import json
+import random
 
-# Print the exit node
-echo "Suggested exit node: $exit_node"
+PRIVACY_FRIENDLY_COUNTRIES = ['Sweden', 'Switzerland', 'Germany', 'Finland', 'Netherlands', 'Norway']
 
-# Set the exit node
-tailscale set --exit-node=$exit_node
+def get_current_exit_node():
+    result = subprocess.run(['tailscale', 'status', '--json'], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception("Failed to get Tailscale status")
+    
+    status = json.loads(result.stdout)
+    current_exit_node = status.get('Peer', {}).get('Tailnet', {}).get('ExitNode', {}).get('Name')
+    return current_exit_node
 
-# Verify the exit node
-exit_node_info=$(curl -s https://am.i.mullvad.net/json)
+def set_exit_node():
+    # Get the suggested exit node
+    result = subprocess.run(['tailscale', 'exit-node', 'suggest'], capture_output=True, text=True)
+    exit_node = ''
+    for line in result.stdout.splitlines():
+        if 'Suggested exit node' in line:
+            exit_node = line.split(': ')[1].strip()
+            break
 
-# Parse the JSON response to get the hostname
-exit_node_hostname=$(echo $exit_node_info | jq -r '.mullvad_exit_ip_hostname')
+    print(f"Suggested exit node: {exit_node}")
 
-echo "Current exit node hostname: $exit_node_hostname"
+    # Set the exit node
+    subprocess.run(['tailscale', 'set', f'--exit-node={exit_node}'], check=True)
 
-# Get the part before the first '.' in the exit_node
-exit_node_short=$(echo $exit_node | cut -d'.' -f1)
+    # Verify the exit node
+    response = requests.get('https://am.i.mullvad.net/json')
+    exit_node_info = response.json()
+    exit_node_hostname = exit_node_info.get('mullvad_exit_ip_hostname')
 
-# Verify that the exit_node_short and exit_node_hostname are equal
-if [ "$exit_node_short" == "$exit_node_hostname" ]; then
-    echo "Exit node set successfully!"
-else
-    echo "Failed to set exit node!"
-fi
+    print(f"Current exit node hostname: {exit_node_hostname}")
+
+    # Get the part before the first '.' in the exit_node
+    exit_node_short = exit_node.split('.')[0]
+
+    # Verify that the exit_node_short and exit_node_hostname are equal
+    if exit_node_short == exit_node_hostname:
+        print("Exit node set successfully!")
+    else:
+        print("Failed to set exit node!")
+
+def unset_exit_node():
+    # Unset the exit node
+    subprocess.run(['tailscale', 'set', '--exit-node='], check=True)
+    print("Exit node unset successfully!")
+
+def start_exit_node():
+    current_exit_node = get_current_exit_node()
+    if current_exit_node:
+        print(f"Already connected to exit node: {current_exit_node}")
+    else:
+        set_exit_node()
+
+def get_random_privacy_friendly_exit_node():
+    result = subprocess.run(['tailscale', 'exit-node', 'list'], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception("Failed to list Tailscale exit nodes")
+    
+    exit_nodes = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) > 3 and parts[2] in PRIVACY_FRIENDLY_COUNTRIES:
+            exit_nodes.append(parts[1])
+    
+    if not exit_nodes:
+        raise Exception("No privacy-friendly exit nodes available")
+    
+    return random.choice(exit_nodes)
+
+def set_random_privacy_friendly_exit_node():
+    exit_node = get_random_privacy_friendly_exit_node()
+    print(f"Selected random privacy-friendly exit node: {exit_node}")
+    
+    # Set the exit node
+    subprocess.run(['tailscale', 'set', f'--exit-node={exit_node}'], check=True)
+    
+    # Verify the exit node
+    response = requests.get('https://am.i.mullvad.net/json')
+    exit_node_info = response.json()
+    exit_node_hostname = exit_node_info.get('mullvad_exit_ip_hostname')
+
+    print(f"Current exit node hostname: {exit_node_hostname}")
+
+    # Get the part before the first '.' in the exit_node
+    exit_node_short = exit_node.split('.')[0]
+
+    # Verify that the exit_node_short and exit_node_hostname are equal
+    if exit_node_short == exit_node_hostname:
+        print("Exit node set successfully!")
+    else:
+        print("Failed to set exit node!")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Manage VPN exit nodes.')
+    parser.add_argument('action', choices=['start', 'stop', 'new', 'shh'], help='Action to perform: start, stop, new, or shh')
+
+    args = parser.parse_args()
+
+    if args.action == 'start':
+        start_exit_node()
+    elif args.action == 'stop':
+        unset_exit_node()
+    elif args.action == 'new':
+        set_exit_node()
+    elif args.action == 'shh':
+        set_random_privacy_friendly_exit_node()
 

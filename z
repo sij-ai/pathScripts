@@ -1,0 +1,3 @@
+source ~/.zprofile
+source ~/.zshrc
+source ~/.zshenv

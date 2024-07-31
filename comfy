@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# Create a new tmux session named "comfy" detached (-d) and start the first command in the left pane
+tmux new-session -d -s comfy -n comfypane
+
+# Split the window into two panes. By default, this creates a vertical split.
+tmux split-window -h -t comfy
+
+# Select the first pane to setup comfy environment
+tmux select-pane -t 0
+COMFY_MAMBA=$(mamba env list | grep "^comfy" | awk '{print $2}')
+tmux send-keys -t 0 "cd ~/workshop/sd/ComfyUI" C-m
+tmux send-keys -t 0 "export PATH=\"$COMFY_MAMBA/bin:\$PATH\"" C-m
+tmux send-keys -t 0 "source ~/.zshrc" C-m
+tmux send-keys -t 0 "mamba activate comfy; sleep 1; while true; do PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0 PYTORCH_ENABLE_MPS_FALLBACK=1 python main.py --preview-method auto --force-fp16 --enable-cors-header; exit_status=\$?; if [ \$exit_status -ne 0 ]; then osascript -e 'display notification \"ComfyUI script exited unexpectedly\" with title \"Error in ComfyUI\"'; fi; sleep 1; done" C-m
+
+# Select the second pane to setup extracomfy environment
+tmux select-pane -t 1
+IG_MAMBA=$(mamba env list | grep "^insta" | awk '{print $2}')
+tmux send-keys -t 1 "export PATH=\"$IG_MAMBA/bin:\$PATH\"" C-m
+tmux send-keys -t 1 "source ~/.zshrc" C-m
+tmux send-keys -t 1 "mamba activate instabot; cd workshop/igbot" C-m
+
+# Attach to the tmux session
+# tmux attach -t comfy
+

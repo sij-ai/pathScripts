@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Create a new tmux session
+tmux new-session -d -s servers -n 'ssh'
+
+# Split the first window horizontally
+tmux split-window -h
+
+# Split the first and second panes vertically
+tmux select-pane -t 0
+tmux split-window -v
+
+tmux select-pane -t 2
+tmux split-window -v
+
+# Function to connect to servers with retry
+connect_to_server_with_retry() {
+    tmux send-keys -t "$1" "while true; do ssh $2; sleep 30; done" C-m
+}
+
+# Connect to servers with retry
+connect_to_server_with_retry 0 "100.64.64.11"
+connect_to_server_with_retry 1 "100.64.64.30"
+connect_to_server_with_retry 2 "100.64.64.15"
+connect_to_server_with_retry 3 "root@10.13.37.10"
+
+# Attach to the tmux session
+tmux attach -t servers
+

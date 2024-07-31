@@ -1,0 +1,55 @@
+#!/bin/bash
+
+echo "Checking for remnants of Node.js, npm, and nvm..."
+
+# Check PATH
+echo "Checking PATH..."
+echo $PATH | grep -q 'node\|npm' && echo "Found Node.js or npm in PATH"
+
+# Check Homebrew
+echo "Checking Homebrew..."
+brew list | grep -q 'node\|npm' && echo "Found Node.js or npm installed with Homebrew"
+
+# Check Yarn
+echo "Checking Yarn..."
+command -v yarn >/dev/null 2>&1 && echo "Found Yarn"
+
+# Check Node.js and npm directories
+echo "Checking Node.js and npm directories..."
+ls ~/.npm >/dev/null 2>&1 && echo "Found ~/.npm directory"
+ls ~/.node-gyp >/dev/null 2>&1 && echo "Found ~/.node-gyp directory"
+
+# Check open files and sockets
+echo "Checking open files and sockets..."
+lsof | grep -q 'node' && echo "Found open files or sockets related to Node.js"
+
+# Check other version managers
+echo "Checking other version managers..."
+command -v n >/dev/null 2>&1 && echo "Found 'n' version manager"
+
+# Check temporary directories
+echo "Checking temporary directories..."
+ls /tmp | grep -q 'node\|npm' && echo "Found Node.js or npm related files in /tmp"
+
+# Check Browserify and Webpack cache
+echo "Checking Browserify and Webpack cache..."
+ls ~/.config/browserify >/dev/null 2>&1 && echo "Found Browserify cache"
+ls ~/.config/webpack >/dev/null 2>&1 && echo "Found Webpack cache"
+
+# Check Electron cache
+echo "Checking Electron cache..."
+ls ~/.electron >/dev/null 2>&1 && echo "Found Electron cache"
+
+# Check logs
+echo "Checking logs..."
+ls ~/.npm/_logs >/dev/null 2>&1 && echo "Found npm logs"
+ls ~/.node-gyp/*.log >/dev/null 2>&1 && echo "Found Node.js logs"
+
+# Check miscellaneous directories
+echo "Checking miscellaneous directories..."
+ls ~/.node_repl_history >/dev/null 2>&1 && echo "Found ~/.node_repl_history"
+ls ~/.v8flags* >/dev/null 2>&1 && echo "Found ~/.v8flags*"
+ls ~/.npm-global >/dev/null 2>&1 && echo "Found ~/.npm-global"
+ls ~/.nvm-global >/dev/null 2>&1 && echo "Found ~/.nvm-global"
+
+echo "Check completed."

@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# List all conda environments and cut the output to get just the names
+envs=$(mamba env list | awk '{print $1}' | grep -v '^#' | grep -v 'base')
+
+# Loop through each environment name
+for env in $envs; do
+    # Use conda (or mamba, but conda is preferred for compatibility reasons) to export the environment to a YAML file
+    # No need to activate the environment; conda can export directly by specifying the name
+    echo "Exporting $env..."
+    mamba env export --name $env > "${env}.yml"
+done
+
+echo "All environments have been exported."
+

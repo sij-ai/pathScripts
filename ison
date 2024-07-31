@@ -1,0 +1,29 @@
+#!/Users/sij/miniforge3/envs/sijapi/bin/python
+
+import requests
+
+def check_health(url):
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            return f"{url} is up"
+        else:
+            return f"{url} returned status code {response.status_code}"
+    except requests.exceptions.RequestException:
+        return f"{url} is down"
+
+def main():
+    addresses = [
+        "http://localhost:4444/health",
+        "http://100.64.64.20:4444/health",
+        "http://100.64.64.30:4444/health",
+        "http://100.64.64.11:4444/health",
+        "http://100.64.64.15:4444/health"
+    ]
+    
+    for address in addresses:
+        print(check_health(address))
+
+if __name__ == "__main__":
+    main()
+
