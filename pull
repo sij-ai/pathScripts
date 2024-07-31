@@ -1,42 +1,25 @@
 #!/bin/bash
 
-repos_file=~/workshop/repos.txt
+output_file=~/workshop/repos.txt
 
-# Check if the repos file exists
-if [ ! -f "$repos_file" ]; then
-    echo "Error: $repos_file does not exist."
-    exit 1
-fi
+# Ensure the output directory exists
+mkdir -p "$(dirname "$output_file")"
 
-# Read the repos file and process each directory
-while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
-    # Trim whitespace
-    repo_path=$(echo "$repo_path" | xargs)
+# Clear the existing file
+> "$output_file"
 
-    # Skip empty lines
-    [ -z "$repo_path" ] && continue
+# Find all .git directories, excluding hidden directories and suppressing permission denied errors
+find ~/ -type d -name ".git" -not -path "*/.*/*" 2>/dev/null | while read -r gitdir; do
+    # Get the parent directory of the .git folder
+    repo_path=$(dirname "$gitdir")
+    echo "$repo_path" >> "$output_file"
+done
 
-    echo "Processing repository: $repo_path"
+echo "Git repositories have been written to $output_file"
 
-    # Navigate to the project directory
-    if ! cd "$repo_path"; then
-        echo "Error: Unable to change to directory $repo_path. Skipping."
-        continue
-    fi
+# Remove duplicate entries
+sort -u "$output_file" -o "$output_file"
 
-    # Check if it's a git repository
-    if [ ! -d .git ]; then
-        echo "Warning: $repo_path is not a git repository. Skipping."
-        continue
-    fi
-
-    # Force pull the latest changes from the repository
-    echo "Force pulling latest changes..."
-    git pull --force
-
-    echo "Update complete for $repo_path"
-    echo "----------------------------------------"
-done < "$repos_file"
-
-echo "All repositories processed."
+echo "Duplicate entries removed. Final list:"
+cat "$output_file"
 
