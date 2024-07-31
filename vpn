@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Get the suggested exit node
+exit_node=$(tailscale exit-node suggest | awk -F': ' '/Suggested exit node/ {print substr($2, 1, length($2)-1)}')
+
+# Print the exit node
+echo "Suggested exit node: $exit_node"
+
+# Set the exit node
+tailscale set --exit-node=$exit_node
+
+# Verify the exit node
+exit_node_info=$(curl -s https://am.i.mullvad.net/json)
+
+# Parse the JSON response to get the hostname
+exit_node_hostname=$(echo $exit_node_info | jq -r '.mullvad_exit_ip_hostname')
+
+echo "Current exit node hostname: $exit_node_hostname"
+
+# Get the part before the first '.' in the exit_node
+exit_node_short=$(echo $exit_node | cut -d'.' -f1)
+
+# Verify that the exit_node_short and exit_node_hostname are equal
+if [ "$exit_node_short" == "$exit_node_hostname" ]; then
+    echo "Exit node set successfully!"
+else
+    echo "Failed to set exit node!"
+fi
+
