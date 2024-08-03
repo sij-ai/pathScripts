@@ -1,10 +1,10 @@
 #!/bin/bash
 
-repos_file=~/workshop/repos.txt
+repos_file="./repos.txt"
 
 # Check if the repos file exists
 if [ ! -f "$repos_file" ]; then
-    echo "Error: $repos_file does not exist."
+    echo "Error: $repos_file does not exist in the current directory."
     exit 1
 fi
 
@@ -33,6 +33,9 @@ while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
     # Force pull the latest changes from the repository
     echo "Force pulling latest changes..."
     git pull --force
+
+    # Return to the original directory
+    cd - > /dev/null
 
     echo "Update complete for $repo_path"
     echo "----------------------------------------"

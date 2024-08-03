@@ -1,15 +1,13 @@
 #!/bin/bash
 
-output_file=~/workshop/repos.txt
+output_file="./repos.txt"
 
-# Ensure the output directory exists
-mkdir -p "$(dirname "$output_file")"
-
-# Clear the existing file
+# Clear the existing file or create it if it doesn't exist
 > "$output_file"
 
-# Find all .git directories, excluding hidden directories and suppressing permission denied errors
-find ~/ -type d -name ".git" -not -path "*/.*/*" 2>/dev/null | while read -r gitdir; do
+# Find all .git directories in the current folder and subfolders, 
+# excluding hidden directories and suppressing permission denied errors
+find . -type d -name ".git" -not -path "*/.*/*" 2>/dev/null | while read -r gitdir; do
     # Get the parent directory of the .git folder
     repo_path=$(dirname "$gitdir")
     echo "$repo_path" >> "$output_file"
