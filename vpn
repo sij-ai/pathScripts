@@ -8,68 +8,119 @@ import random
 
 PRIVACY_FRIENDLY_COUNTRIES = ['Sweden', 'Switzerland', 'Germany', 'Finland', 'Netherlands', 'Norway']
 
-def run_command(command):
-    result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0:
-        raise Exception(f"Failed to execute command: {' '.join(command)}")
-    return result.stdout
+TAILSCALE_ARGS = [
+    '--exit-node-allow-lan-access',
+    '--stateful-filtering=false',
+    '--accept-dns',
+    '--accept-routes',
+    '--auto-update'
+]
 
 def get_current_exit_node():
-    status = json.loads(run_command(['tailscale', 'status', '--json']))
-    return status.get('Peer', {}).get('Tailnet', {}).get('ExitNode', {}).get('Name')
+    result = subprocess.run(['tailscale', 'status', '--json'], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception("Failed to get Tailscale status")
 
-def verify_exit_node(exit_node):
+    status = json.loads(result.stdout)
+    current_exit_node = status.get('Peer', {}).get('Tailnet', {}).get('ExitNode', {}).get('Name')
+    return current_exit_node
+
+def set_exit_node():
+    # Get the suggested exit node
+    result = subprocess.run(['tailscale', 'exit-node', 'suggest'], capture_output=True, text=True)
+    exit_node = ''
+    for line in result.stdout.splitlines():
+        if 'Suggested exit node' in line:
+            exit_node = line.split(': ')[1].strip()
+            break
+
+    print(f"Suggested exit node: {exit_node}")
+
+    # Set the exit node with additional arguments
+    cmd = ['tailscale', 'set', f'--exit-node={exit_node}'] + TAILSCALE_ARGS
+    subprocess.run(cmd, check=True)
+
+    # Verify the exit node
     response = requests.get('https://am.i.mullvad.net/json')
-    exit_node_hostname = response.json().get('mullvad_exit_ip_hostname')
+    exit_node_info = response.json()
+    exit_node_hostname = exit_node_info.get('mullvad_exit_ip_hostname')
+
     print(f"Current exit node hostname: {exit_node_hostname}")
 
+    # Get the part before the first '.' in the exit_node
     exit_node_short = exit_node.split('.')[0]
+
+    # Verify that the exit_node_short and exit_node_hostname are equal
     if exit_node_short == exit_node_hostname:
         print("Exit node set successfully!")
     else:
         print("Failed to set exit node!")
 
-def set_exit_node(exit_node=None):
-    if not exit_node:
-        stdout = run_command(['tailscale', 'exit-node', 'suggest'])
-        exit_node = next((line.split(': ')[1].strip() for line in stdout.splitlines() if 'Suggested exit node' in line), None)
-    
-    print(f"Setting exit node: {exit_node}")
-    run_command(['tailscale', 'set', f'--exit-node={exit_node}'])
-    verify_exit_node(exit_node)
-
 def unset_exit_node():
-    run_command(['tailscale', 'set', '--exit-node='])
+    # Unset the exit node
+    cmd = ['tailscale', 'set', '--exit-node='] + TAILSCALE_ARGS
+    subprocess.run(cmd, check=True)
     print("Exit node unset successfully!")
 
+def start_exit_node():
+    current_exit_node = get_current_exit_node()
+    if current_exit_node:
+        print(f"Already connected to exit node: {current_exit_node}")
+    else:
+        set_exit_node()
+
 def get_random_privacy_friendly_exit_node():
-    stdout = run_command(['tailscale', 'exit-node', 'list'])
-    exit_nodes = [parts[1] for parts in (line.split() for line in stdout.splitlines()) 
-                  if len(parts) > 3 and parts[2] in PRIVACY_FRIENDLY_COUNTRIES]
-    
+    result = subprocess.run(['tailscale', 'exit-node', 'list'], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise Exception("Failed to list Tailscale exit nodes")
+
+    exit_nodes = []
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) > 3 and parts[2] in PRIVACY_FRIENDLY_COUNTRIES:
+            exit_nodes.append(parts[1])
+
     if not exit_nodes:
         raise Exception("No privacy-friendly exit nodes available")
+
     return random.choice(exit_nodes)
 
-def main():
+def set_random_privacy_friendly_exit_node():
+    exit_node = get_random_privacy_friendly_exit_node()
+    print(f"Selected random privacy-friendly exit node: {exit_node}")
+
+    # Set the exit node with additional arguments
+    cmd = ['tailscale', 'set', f'--exit-node={exit_node}'] + TAILSCALE_ARGS
+    subprocess.run(cmd, check=True)
+
+    # Verify the exit node
+    response = requests.get('https://am.i.mullvad.net/json')
+    exit_node_info = response.json()
+    exit_node_hostname = exit_node_info.get('mullvad_exit_ip_hostname')
+
+    print(f"Current exit node hostname: {exit_node_hostname}")
+
+    # Get the part before the first '.' in the exit_node
+    exit_node_short = exit_node.split('.')[0]
+
+    # Verify that the exit_node_short and exit_node_hostname are equal
+    if exit_node_short == exit_node_hostname:
+        print("Exit node set successfully!")
+    else:
+        print("Failed to set exit node!")
+
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Manage VPN exit nodes.')
-    parser.add_argument('action', nargs='?', default='start', choices=['start', 'stop', 'new', 'shh'], 
-                        help='Action to perform: start (default), stop, new, or shh')
+    parser.add_argument('action', choices=['start', 'stop', 'new', 'shh'], help='Action to perform: start, stop, new, or shh')
+
     args = parser.parse_args()
 
     if args.action == 'start':
-        current_exit_node = get_current_exit_node()
-        if current_exit_node:
-            print(f"Already connected to exit node: {current_exit_node}")
-        else:
-            set_exit_node()
+        start_exit_node()
     elif args.action == 'stop':
         unset_exit_node()
     elif args.action == 'new':
         set_exit_node()
     elif args.action == 'shh':
-        set_exit_node(get_random_privacy_friendly_exit_node())
-
-if __name__ == "__main__":
-    main()
+        set_random_privacy_friendly_exit_node()
 
