@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Function to install a package
+install_package() {
+    package=$1
+
+    if mamba list | grep -q "^$package\s"; then
+      echo "Package '$package' already installed by mamba."
+    elif pip list | grep -q "^$package\s"; then
+      echo "Package '$package' already installed by pip."
+    else
+      echo "Installing package '$package'."
+      mamba install -y -c conda-forge "$package" || pip install "$package"
+    fi
+}
+
+# Function to process Python file for import statements
+process_python_file() {
+    file_path=$1
+    # Extracting module names from import statements, handling both 'import' and 'from ... import ...'
+    IMPORTS=$(grep -E "^import |^from " "$file_path" | \
+             awk '{if($1=="from") print $2; else print $2}' | \
+             cut -d. -f1 | sort | uniq)
+    
+    for package in $IMPORTS; do
+        echo "Processing $package from $file_path"
+        install_package $package
+    done
+}
+
+# Check if any arguments were passed
+if [ "$#" -lt 1 ]; then
+    echo "Usage: kip <package1> [<package2> ...] or kip <script.py>"
+    exit 1
+fi
+
+MAMBA_BASE=$(mamba info --base)
+export PYTHONPATH="${PYTHONPATH}:${MAMBA_BASE}/${CONDA_DEFAULT_ENV}/lib/python"
+
+for arg in "$@"; do
+    # Check if the argument is a Python file
+    if [[ "$arg" == *.py ]]; then
+        if [ -f "$arg" ]; then
+            process_python_file "$arg"
+        else
+            echo "File $arg not found."
+        fi
+    else
+        install_package "$arg"
+    fi
+done
+

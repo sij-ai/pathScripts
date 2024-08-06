@@ -1,52 +1,144 @@
-#!/bin/bash
+#!/usr/bin/env python3
 
-# Function to install a package
-install_package() {
-    package=$1
+import os
+import sys
+import re
+import subprocess
+import requests
+import time
+from typing import Set, Tuple, List, Dict
 
-    if mamba list | grep -q "^$package\s"; then
-      echo "Package '$package' already installed by mamba."
-    elif pip list | grep -q "^$package\s"; then
-      echo "Package '$package' already installed by pip."
-    else
-      echo "Installing package '$package'."
-      mamba install -y -c conda-forge "$package" || pip install "$package"
-    fi
+# List of Python built-in modules
+BUILTIN_MODULES = {
+    'abc', 'aifc', 'argparse', 'array', 'ast', 'asynchat', 'asyncio', 'asyncore', 'atexit',
+    'audioop', 'base64', 'bdb', 'binascii', 'binhex', 'bisect', 'builtins', 'bz2', 'calendar',
+    'cgi', 'cgitb', 'chunk', 'cmath', 'cmd', 'code', 'codecs', 'codeop', 'collections', 'colorsys',
+    'compileall', 'concurrent', 'configparser', 'contextlib', 'copy', 'copyreg', 'crypt', 'csv',
+    'ctypes', 'curses', 'dataclasses', 'datetime', 'dbm', 'decimal', 'difflib', 'dis', 'distutils',
+    'doctest', 'dummy_threading', 'email', 'encodings', 'ensurepip', 'enum', 'errno', 'faulthandler',
+    'fcntl', 'filecmp', 'fileinput', 'fnmatch', 'formatter', 'fractions', 'ftplib', 'functools',
+    'gc', 'getopt', 'getpass', 'gettext', 'glob', 'gzip', 'hashlib', 'heapq', 'hmac', 'html', 'http',
+    'imaplib', 'imghdr', 'imp', 'importlib', 'inspect', 'io', 'ipaddress', 'itertools', 'json',
+    'keyword', 'lib2to3', 'linecache', 'locale', 'logging', 'lzma', 'mailbox', 'mailcap', 'marshal',
+    'math', 'mimetypes', 'modulefinder', 'multiprocessing', 'netrc', 'nntplib', 'numbers', 'operator',
+    'optparse', 'os', 'ossaudiodev', 'parser', 'pathlib', 'pdb', 'pickle', 'pickletools', 'pipes',
+    'pkgutil', 'platform', 'plistlib', 'poplib', 'posix', 'pprint', 'profile', 'pstats', 'pty',
+    'pwd', 'py_compile', 'pyclbr', 'pydoc', 'queue', 'quopri', 'random', 're', 'readline',
+    'reprlib', 'resource', 'rlcompleter', 'runpy', 'sched', 'secrets', 'select', 'selectors', 'shelve',
+    'shlex', 'shutil', 'signal', 'site', 'smtpd', 'smtplib', 'sndhdr', 'socket', 'socketserver',
+    'spwd', 'sqlite3', 'ssl', 'stat', 'statistics', 'string', 'stringprep', 'struct', 'subprocess',
+    'sunau', 'symtable', 'sys', 'sysconfig', 'syslog', 'tabnanny', 'tarfile', 'telnetlib', 'tempfile',
+    'termios', 'test', 'textwrap', 'threading', 'time', 'timeit', 'token', 'tokenize', 'trace',
+    'traceback', 'tracemalloc', 'tty', 'turtle', 'types', 'typing', 'unicodedata', 'unittest',
+    'urllib', 'uu', 'uuid', 'venv', 'warnings', 'wave', 'weakref', 'webbrowser', 'xdrlib', 'xml',
+    'xmlrpc', 'zipapp', 'zipfile', 'zipimport', 'zlib'
 }
 
-# Function to process Python file for import statements
-process_python_file() {
-    file_path=$1
-    # Extracting module names from import statements, handling both 'import' and 'from ... import ...'
-    IMPORTS=$(grep -E "^import |^from " "$file_path" | \
-             awk '{if($1=="from") print $2; else print $2}' | \
-             cut -d. -f1 | sort | uniq)
+# Known corrections for PyPI package names
+KNOWN_CORRECTIONS = {
+    'dateutil': 'python-dateutil',
+    'dotenv': 'python-dotenv',
+    'docx': 'python-docx',
+    'tesseract': 'pytesseract',
+    'magic': 'python-magic',
+    'multipart': 'python-multipart',
+    'newspaper': 'newspaper3k',
+    'srtm': 'elevation',
+    'yaml': 'pyyaml',
+    'zoneinfo': 'backports.zoneinfo'
+}
+
+# List of generic names to exclude
+EXCLUDED_NAMES = {'models', 'data', 'convert', 'example', 'tests'}
+
+def run_command(command: List[str]) -> Tuple[int, str, str]:
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = process.communicate()
+    return process.returncode, stdout.decode(), stderr.decode()
+
+def is_package_installed(package: str) -> bool:
+    returncode, stdout, _ = run_command(["mamba", "list"])
+    if returncode == 0:
+        if re.search(f"^{package}\\s", stdout, re.MULTILINE):
+            return True
+    returncode, stdout, _ = run_command(["pip", "list"])
+    return re.search(f"^{package}\\s", stdout, re.MULTILINE) is not None
+
+def install_package(package: str):
+    if is_package_installed(package):
+        print(f"Package '{package}' is already installed.")
+        return
+
+    print(f"Installing package '{package}'.")
+    returncode, _, _ = run_command(["mamba", "install", "-y", "-c", "conda-forge", package])
+    if returncode != 0:
+        returncode, _, _ = run_command(["pip", "install", package])
     
-    for package in $IMPORTS; do
-        echo "Processing $package from $file_path"
-        install_package $package
-    done
-}
+    if returncode != 0:
+        print(f"Failed to install package '{package}'.")
+    else:
+        print(f"Successfully installed package '{package}'.")
 
-# Check if any arguments were passed
-if [ "$#" -lt 1 ]; then
-    echo "Usage: kip <package1> [<package2> ...] or kip <script.py>"
-    exit 1
-fi
+def process_python_file(file_path: str) -> Set[str]:
+    with open(file_path, 'r') as file:
+        content = file.read()
 
-MAMBA_BASE=$(mamba info --base)
-export PYTHONPATH="${PYTHONPATH}:${MAMBA_BASE}/${CONDA_DEFAULT_ENV}/lib/python"
+    imports = set()
+    for line in content.split('\n'):
+        line = line.strip()
+        if line.startswith(('import ', 'from ')) and not line.startswith('#'):
+            if line.startswith('import '):
+                modules = line.replace('import ', '').split(',')
+                for mod in modules:
+                    mod = re.sub(r'\s+as\s+\w+', '', mod).split('.')[0].strip()
+                    if mod and not mod.isupper() and mod not in EXCLUDED_NAMES and mod not in BUILTIN_MODULES:
+                        imports.add(KNOWN_CORRECTIONS.get(mod, mod))
+            elif line.startswith('from '):
+                mod = line.split(' ')[1].split('.')[0].strip()
+                if mod and not mod.isupper() and mod not in EXCLUDED_NAMES and mod not in BUILTIN_MODULES:
+                    imports.add(KNOWN_CORRECTIONS.get(mod, mod))
 
-for arg in "$@"; do
-    # Check if the argument is a Python file
-    if [[ "$arg" == *.py ]]; then
-        if [ -f "$arg" ]; then
-            process_python_file "$arg"
-        else
-            echo "File $arg not found."
-        fi
-    else
-        install_package "$arg"
-    fi
-done
+    return imports
 
+def process_requirements_file(file_path: str) -> Set[str]:
+    with open(file_path, 'r') as file:
+        return {line.strip() for line in file if line.strip() and not line.startswith('#')}
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: kip <package1> [<package2> ...] or kip <script.py> or kip -r <requirements.txt>")
+        sys.exit(1)
+
+    packages_to_install = set()
+
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg == '-r':
+            if i + 1 < len(sys.argv):
+                requirements_file = sys.argv[i + 1]
+                if os.path.isfile(requirements_file):
+                    packages_to_install.update(process_requirements_file(requirements_file))
+                else:
+                    print(f"Requirements file {requirements_file} not found.")
+                    sys.exit(1)
+                i += 2
+            else:
+                print("Error: -r flag requires a file path.")
+                sys.exit(1)
+        elif arg.endswith('.py'):
+            if os.path.isfile(arg):
+                packages_to_install.update(process_python_file(arg))
+            else:
+                print(f"File {arg} not found.")
+                sys.exit(1)
+            i += 1
+        else:
+            packages_to_install.add(arg)
+            i += 1
+
+    for package in packages_to_install:
+        install_package(package)
+
+if __name__ == "__main__":
+    main()
