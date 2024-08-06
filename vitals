@@ -6,7 +6,16 @@ adguard_home_ip='100.64.64.15'
 if [[ "$(uname)" == "Darwin" ]]; then
     # macOS
     local_ip=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -n1)
-    uptime=$(uptime | awk '{print $3}' | sed 's/,//')
+    uptime_seconds=$(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//')
+    current_time=$(date +%s)
+    uptime_seconds=$((current_time - uptime_seconds))
+    days=$((uptime_seconds / 86400))
+    hours=$(( (uptime_seconds % 86400) / 3600 ))
+    minutes=$(( (uptime_seconds % 3600) / 60 ))
+    uptime="up "
+    [[ $days -gt 0 ]] && uptime+="$days days, "
+    [[ $hours -gt 0 ]] && uptime+="$hours hours, "
+    uptime+="$minutes minutes"
 else
     # Linux
     local_ip=$(hostname -I | awk '{print $1}')
@@ -22,7 +31,10 @@ if [ ! -z "$wan_info" ]; then
   blacklisted=$(echo "$wan_info" | jq '.blacklisted.blacklisted')
 else
   wan_ip="Unavailable"
+  mullvad_exit_ip=false
+  blacklisted=false
 fi
+
 
 # Check if Tailscale is installed and get IP
 if command -v tailscale &> /dev/null; then
@@ -33,8 +45,8 @@ if command -v tailscale &> /dev/null; then
   # Parse exit node hostname
   if echo "$ts_exitnode_output" | grep -q 'selected'; then
     mullvad_exitnode=true
-    # Extract the hostname of the selected exit node
-    mullvad_hostname=$(echo "$ts_exitnode_output" | grep 'selected' | awk '{print $2}')
+    # Extract the hostname of the selected exit node, remove any newline characters, and take only the first occurrence
+    mullvad_hostname=$(echo "$ts_exitnode_output" | grep 'selected' | awk '{print $2}' | tr -d '\n' | awk -F'.' '{print $1"."$2"."$3"."$4}')
   else
     mullvad_exitnode=false
     mullvad_hostname=""
@@ -77,24 +89,40 @@ else
   adguard_client=""
 fi
 
-cat <<EOF
-{
-  "local_ip": "$local_ip",
-  "wan_connected": $wan_connected,
-  "wan_ip": "$wan_ip",
-  "has_tailscale": $has_tailscale,
-  "tailscale_ip": "$tailscale_ip",
-  "mullvad_exitnode": $mullvad_exitnode,
-  "mullvad_hostname": "$mullvad_hostname",
-  "mullvad_exit_ip": $mullvad_exit_ip,
-  "blacklisted": $blacklisted,
-  "nextdns_connected": $nextdns_connected,
-  "nextdns_protocol": "$nextdns_protocol",
-  "nextdns_client": "$nextdns_client",
-  "adguard_connected": $adguard_connected,
-  "adguard_protocol": "$adguard_protocol",
-  "adguard_client": "$adguard_client",
-  "uptime": "$uptime"
-}
-EOF
+# Output JSON using jq for proper formatting and escaping
+jq -n \
+--arg local_ip "$local_ip" \
+--argjson wan_connected "$wan_connected" \
+--arg wan_ip "$wan_ip" \
+--argjson has_tailscale "$has_tailscale" \
+--arg tailscale_ip "$tailscale_ip" \
+--argjson mullvad_exitnode "$mullvad_exitnode" \
+--arg mullvad_hostname "$mullvad_hostname" \
+--argjson mullvad_exit_ip "$mullvad_exit_ip" \
+--argjson blacklisted "$blacklisted" \
+--argjson nextdns_connected "$nextdns_connected" \
+--arg nextdns_protocol "$nextdns_protocol" \
+--arg nextdns_client "$nextdns_client" \
+--argjson adguard_connected "$adguard_connected" \
+--arg adguard_protocol "$adguard_protocol" \
+--arg adguard_client "$adguard_client" \
+--arg uptime "$uptime" \
+'{
+  local_ip: $local_ip,
+  wan_connected: $wan_connected,
+  wan_ip: $wan_ip,
+  has_tailscale: $has_tailscale,
+  tailscale_ip: $tailscale_ip,
+  mullvad_exitnode: $mullvad_exitnode,
+  mullvad_hostname: $mullvad_hostname,
+  mullvad_exit_ip: $mullvad_exit_ip,
+  blacklisted: $blacklisted,
+  nextdns_connected: $nextdns_connected,
+  nextdns_protocol: $nextdns_protocol,
+  nextdns_client: $nextdns_client,
+  adguard_connected: $adguard_connected,
+  adguard_protocol: $adguard_protocol,
+  adguard_client: $adguard_client,
+  uptime: $uptime
+}'
 
