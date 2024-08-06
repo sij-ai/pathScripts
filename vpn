@@ -13,7 +13,7 @@ TAILSCALE_ARGS = [
 #    '--stateful-filtering=false',
     '--accept-dns',
     '--accept-routes',
-    '--auto-update'
+#    '--auto-update'
 ]
 
 def get_current_exit_node():
