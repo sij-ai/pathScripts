@@ -1,9 +1,18 @@
 #!/bin/bash
 
-tailscale='/Applications/Tailscale.app/Contents/MacOS/Tailscale'
+adguard_test_domain='check.adguard.test'
+adguard_home_ip='100.64.64.15'
 
-# Get local IP
-local_ip=$(hostname -I | awk '{print $1}')
+if [[ "$(uname)" == "Darwin" ]]; then
+    # macOS
+    local_ip=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -n1)
+    uptime=$(uptime | awk '{print $3}' | sed 's/,//')
+else
+    # Linux
+    local_ip=$(hostname -I | awk '{print $1}')
+    uptime=$(uptime -p)
+fi
+
 wan_info=$(curl -s --max-time 10 https://am.i.mullvad.net/json)
 wan_connected=false
 if [ ! -z "$wan_info" ]; then
@@ -16,11 +25,11 @@ else
 fi
 
 # Check if Tailscale is installed and get IP
-if command -v $tailscale &> /dev/null; then
+if command -v tailscale &> /dev/null; then
   has_tailscale=true
-  tailscale_ip=$($tailscale ip -4)
+  tailscale_ip=$(tailscale ip -4)
   # Get Tailscale exit-node information
-  ts_exitnode_output=$($tailscale exit-node list)
+  ts_exitnode_output=$(tailscale exit-node list)
   # Parse exit node hostname
   if echo "$ts_exitnode_output" | grep -q 'selected'; then
     mullvad_exitnode=true
@@ -39,25 +48,34 @@ fi
 
 nextdns_info=$(curl -sL --max-time 10 https://test.nextdns.io)
 if [ -z "$nextdns_info" ]; then
-  echo "Failed to fetch NextDNS status or no internet connection."
+  echo "Failed to fetch NextDNS status or no internet connection." >&2
+  nextdns_connected=false
+  nextdns_protocol=""
+  nextdns_client=""
 else
   nextdns_status=$(echo "$nextdns_info" | jq -r '.status')
-  if [ "$nextdns_status" = "unconfigured" ]; then
-    echo "You are not using NextDNS."
-    nextdns_connected=false
-    nextdns_protocol=""
-    nextdns_client=""
-  else
+  if [ "$nextdns_status" = "ok" ]; then
     nextdns_connected=true
     nextdns_protocol=$(echo "$nextdns_info" | jq -r '.protocol')
     nextdns_client=$(echo "$nextdns_info" | jq -r '.clientName')
-    echo "Connected to NextDNS via $nextdns_protocol. Client: $nextdns_client."
+  else
+    nextdns_connected=false
+    nextdns_protocol=""
+    nextdns_client=""
   fi
 fi
 
-# read uptime_seconds _ < /proc/uptime
-# uptime_days=$(echo "$uptime_seconds / 86400" | bc -l)
-# uptime_rounded=$(printf "%.2f" $uptime_days)
+# Check AdGuard Home DNS
+resolved_ip=$(dig +short $adguard_test_domain)
+if [ "$resolved_ip" = "$adguard_home_ip" ]; then
+  adguard_connected=true
+  adguard_protocol="AdGuard Home"
+  adguard_client="$adguard_home_ip"
+else
+  adguard_connected=false
+  adguard_protocol=""
+  adguard_client=""
+fi
 
 cat <<EOF
 {
@@ -73,5 +91,10 @@ cat <<EOF
   "nextdns_connected": $nextdns_connected,
   "nextdns_protocol": "$nextdns_protocol",
   "nextdns_client": "$nextdns_client",
-  "uptime": ""
+  "adguard_connected": $adguard_connected,
+  "adguard_protocol": "$adguard_protocol",
+  "adguard_client": "$adguard_client",
+  "uptime": "$uptime"
 }
+EOF
+
