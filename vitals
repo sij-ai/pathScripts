@@ -45,8 +45,8 @@ if command -v tailscale &> /dev/null; then
   # Parse exit node hostname
   if echo "$ts_exitnode_output" | grep -q 'selected'; then
     mullvad_exitnode=true
-    # Extract the hostname of the selected exit node, remove any newline characters, and take only the first occurrence
-    mullvad_hostname=$(echo "$ts_exitnode_output" | grep 'selected' | awk '{print $2}' | tr -d '\n' | awk -F'.' '{print $1"."$2"."$3"."$4}')
+    # Extract the hostname of the selected exit node, taking only the part before any newline
+    mullvad_hostname=$(echo "$ts_exitnode_output" | grep 'selected' | awk '{print $2}' | awk -F'\n' '{print $1}')
   else
     mullvad_exitnode=false
     mullvad_hostname=""
