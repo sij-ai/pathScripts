@@ -15,8 +15,8 @@ source "$HOME/workshop/sijapi/sijapi/config/.env"
 # Activate the conda environment (adjust the path if necessary)
 source "$HOME/miniforge3/bin/activate" sijapi
 
-# Run the Python script
-python "$SCRIPT_PATH"
+# Run the Python script with all command line arguments
+python "$SCRIPT_PATH" "$@"
 
 # Deactivate the conda environment
 conda deactivate
