@@ -1,7 +1,6 @@
 #!/bin/bash
 
 adguard_test_domain='check.adguard.test'
-adguard_home_ip='100.64.64.15'
 
 if [[ "$(uname)" == "Darwin" ]]; then
     # macOS
@@ -34,7 +33,6 @@ else
   mullvad_exit_ip=false
   blacklisted=false
 fi
-
 
 # Check if Tailscale is installed and get IP
 if command -v tailscale &> /dev/null; then
@@ -79,10 +77,10 @@ fi
 
 # Check AdGuard Home DNS
 resolved_ip=$(dig +short $adguard_test_domain)
-if [ "$resolved_ip" = "$adguard_home_ip" ]; then
+if [[ $resolved_ip =~ ^100\. ]]; then
   adguard_connected=true
   adguard_protocol="AdGuard Home"
-  adguard_client="$adguard_home_ip"
+  adguard_client="$resolved_ip"
 else
   adguard_connected=false
   adguard_protocol=""
@@ -125,4 +123,3 @@ jq -n \
   adguard_client: $adguard_client,
   uptime: $uptime
 }'
-
