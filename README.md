@@ -2,28 +2,34 @@
 
 A collection of various scripts I use frequently enough to justify keeping them in my system PATH. 
 
-I haven't written documentation for all of these scripts. I might in time. 
-
-For now, here's just a few highlights. But first:
+I haven't written documentation for all of these scripts. I might in time. Find documentation for some of the highlights below.
 
 ## Installation
 
+1. Clone and enter repository:
+
 ```bash
-# Clone the repository
 git clone https://sij.ai/sij/pathScripts.git
+cd pathScripts
+```
 
-# Add to PATH on macOS
-echo 'export PATH="$PATH:$HOME/path/to/pathScripts"' >> ~/.zshrc
+2. Add to your system PATH:
+
+macOS / ZSH:
+```bash
+echo "export PATH=\"\$PATH:$PWD\"" >> ~/.zshrc
 source ~/.zshrc
+```
 
-# Add to PATH on Debian/Ubuntu
-echo 'export PATH="$PATH:$HOME/path/to/pathScripts"' >> ~/.bashrc
+Linux / Bash:
+```bash
+echo "export PATH=\"\$PATH:$PWD\"" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-Make scripts executable:
+3. Make scripts executable:
+
 ```bash
-cd pathScripts
 chmod +x *
 ```
 
