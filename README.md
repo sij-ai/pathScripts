@@ -1,6 +1,3 @@
-Make it a little more concise, so that it can be included in this README.md:
-
-
 # PATH-worthy Scripts 🛠️
 
 A collection of useful scripts for your system PATH. Here's how to get started:
