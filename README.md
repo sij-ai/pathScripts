@@ -1,3 +1,6 @@
+Make it a little more concise, so that it can be included in this README.md:
+
+
 # PATH-worthy Scripts 🛠️
 
 A collection of useful scripts for your system PATH. Here's how to get started:
@@ -75,6 +78,58 @@ bates /path/to/pdfs --prefix "FWS-" --digits 6 --name-prefix "FWS " --ocr
 - OCR is disabled by default to keep things fast
 
 ---
+
+
+## kip - Intelligent Python Package Installer
+
+A smart package installer that automates Python dependency management, supporting both mamba and pip.
+
+### Setup
+```bash
+chmod +x kip
+```
+
+### Usage
+```bash
+kip <package1> [<package2> ...]  # Install specific packages
+kip <script.py>                  # Install from Python file
+kip -r <requirements.txt>        # Install from requirements file
+```
+
+### Key Features
+- Smart import detection in Python files
+- Handles package name corrections automatically
+- Uses mamba first, falls back to pip
+- Supports multiple installation methods
+- Filters out built-in modules
+
+### Examples
+```bash
+# Install single package
+kip requests
+
+# Analyze script and install dependencies
+kip analysis.py
+
+# Install from requirements
+kip -r requirements.txt
+```
+
+### Package Corrections
+Automatically corrects common package names:
+- `yaml` → `pyyaml`
+- `dateutil` → `python-dateutil`
+- `dotenv` → `python-dotenv`
+- `newspaper` → `newspaper3k`
+
+### Notes
+- Requires Python 3.x
+- Works with mamba or pip
+- Provides clear installation feedback
+- Ignores built-in modules and generic names
+
+---
+
 
 ## 🔒 vpn - Tailscale Exit Node Manager
 
