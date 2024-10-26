@@ -185,4 +185,4 @@ vpn shh    # Connect via privacy-friendly country
 
 ---
 
-_More scripts will be documented as they're updated. Each script includes `--help` for detailed usage information._
+_More scripts will be documented as they're updated. Most scripts include `--help` for basic usage information._
