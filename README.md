@@ -1,58 +1,57 @@
-# PATH-worthy Scripts
+# PATH-worthy Scripts 🛠️
 
-Hey folks, this repo is just a collection of various scripts I use frequently enough to justify keeping them in my system PATH. I haven't written documentation for all of these scripts. I might in time. For now, here's just a few highlights.
+A collection of useful scripts for your system PATH. Here's how to get started:
 
-## bates
+## Installation
 
-A simple Python-based utility for extracting Bates numbers from PDF documents and optionally renaming files based on those numbers. Particularly useful for organizing legal documents or any PDFs with sequential numbering.
+```bash
+# Clone the repository
+git clone https://sij.ai/sij/pathScripts.git
 
-### Overview
+# Add to PATH on macOS
+echo 'export PATH="$PATH:$HOME/path/to/pathScripts"' >> ~/.zshrc
+source ~/.zshrc
 
-This tool helps you:
-- Extract Bates numbers from PDFs (both text-based and scanned documents)
-- Rename files based on their Bates number range
-- Preserve original filenames in macOS Finder comments
-- Process entire folders of PDFs in one go
-- Prepare files for use with my [Bates Source Link](https://sij.ai/sij/DEVONthink/src/branch/main/Bates%20Source%20Link.scpt$0) DEVONthink script
+# Add to PATH on Debian/Ubuntu
+echo 'export PATH="$PATH:$HOME/path/to/pathScripts"' >> ~/.bashrc
+source ~/.bashrc
+```
 
-### Installation
+Make scripts executable:
+```bash
+cd pathScripts
+chmod +x *
+```
 
-1. Install Python dependencies:
+---
+
+## 📄 bates - PDF Bates Number Tool
+
+Extracts and renames PDFs based on Bates numbers.
+
+### Setup
 ```bash
 pip3 install pdfplumber
-```
-
-If you plan to use OCR capabilities, also install:
-```bash
+# For OCR support:
 pip3 install pytesseract pdf2image
+brew install tesseract poppler  # macOS
+# or
+sudo apt-get install tesseract-ocr poppler-utils  # Debian
 ```
 
-2. For OCR support, install system dependencies:
-
-On macOS:
+### Usage
 ```bash
-brew install tesseract poppler
+bates /path/to/folder --prefix "FWS-" --digits 6 --name-prefix "FWS "
 ```
 
-On Ubuntu/Debian:
-```bash
-sudo apt-get install tesseract-ocr poppler-utils
-```
-
-### Basic Usage
-
-Test extraction without renaming files:
-```bash
-python3 bates.py /path/to/folder --prefix "FWS-" --digits 6 --dry-run
-```
-
-Rename files based on Bates numbers:
-```bash
-python3 bates.py /path/to/folder --prefix "FWS-" --digits 6 --name-prefix "FWS "
-```
+### Key Features
+- Extracts Bates numbers from text/scanned PDFs
+- Renames files with number ranges
+- Preserves original names in Finder comments
+- OCR support for scanned documents
+- Dry-run mode with `--dry-run`
 
 ### Options
-
 - `--prefix`: The Bates number prefix to search for (default: "FWS-")
 - `--digits`: Number of digits after the prefix (default: 6)
 - `--ocr`: Enable OCR for scanned documents
@@ -60,110 +59,67 @@ python3 bates.py /path/to/folder --prefix "FWS-" --digits 6 --name-prefix "FWS "
 - `--name-prefix`: Prefix to use when renaming files
 - `--log`: Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
-### Notes
+### Examples
+```bash
+# Test without making changes
+bates /path/to/pdfs --prefix "FWS-" --digits 6 --dry-run
 
+# Rename files with OCR support
+bates /path/to/pdfs --prefix "FWS-" --digits 6 --name-prefix "FWS " --ocr
+```
+
+### Notes
 - Always test with `--dry-run` first
 - Original filenames are preserved in Finder comments (macOS only)
 - OCR is disabled by default to keep things fast
 
+---
 
+## 🔒 vpn - Tailscale Exit Node Manager
 
+Privacy-focused Tailscale exit node management.
 
-## vpn
-
-A command-line utility for managing Tailscale exit nodes with privacy-focused features.
-
-### Overview
-
-This tool helps you:
-- Start and stop Tailscale exit nodes
-- Select new exit nodes automatically
-- Choose random exit nodes from privacy-friendly countries
-- Verify successful connections using Mullvad's API
-
-### Requirements
-
-- Python 3
-- Tailscale installed and configured
-- `requests` Python package
-
-Install dependencies:
+### Setup
 ```bash
 pip3 install requests
 ```
 
 ### Usage
-
 ```bash
-python3 vpn.py <action>
+vpn <action>  # actions: start, stop, new, shh
 ```
 
-#### Available Actions
-
+### Actions
 - `start`: Connect to a suggested exit node if not already connected
-```bash
-python3 vpn.py start
-```
-
 - `stop`: Disconnect from current exit node
-```bash
-python3 vpn.py stop
-```
-
 - `new`: Switch to a new suggested exit node
-```bash
-python3 vpn.py new
-```
-
 - `shh`: Connect to a random exit node in a privacy-friendly country
-```bash
-python3 vpn.py shh
-```
 
-### Privacy Features
-
-The script considers the following countries as privacy-friendly for the `shh` command:
-- Sweden
-- Switzerland
-- Germany
-- Finland
-- Netherlands
-- Norway
-
-### Configuration
-
-The script uses these default Tailscale arguments:
-- `--exit-node-allow-lan-access`: Allow access to LAN while using exit node
-- `--accept-dns`: Use DNS settings from the exit node
-- `--accept-routes`: Accept advertised routes from the exit node
-
-### Verification
-
-The script verifies successful connections by:
-1. Checking Tailscale's reported exit node
-2. Verifying the connection using Mullvad's API
-3. Confirming the hostnames match
+### Key Features
+- Auto-connects to suggested nodes
+- Privacy-friendly country selection (SE, CH, DE, FI, NL, NO)
+- Connection verification via Mullvad API
+- Default Tailscale arguments:
+  - `--exit-node-allow-lan-access`
+  - `--accept-dns`
+  - `--accept-routes`
 
 ### Examples
-
-Start using an exit node:
 ```bash
-$ python3 vpn.py start
-Suggested exit node: stockholm.ts.net
-Current exit node hostname: stockholm
-Exit node set successfully!
+vpn start  # Connect to suggested node
+vpn shh    # Connect via privacy-friendly country
 ```
 
-Switch to a privacy-focused node:
-```bash
-$ python3 vpn.py shh
-Selected random privacy-friendly exit node: zurich.ts.net
-Current exit node hostname: zurich
-Exit node set successfully!
-```
+### Verification
+- Checks Tailscale's reported exit node
+- Verifies connection using Mullvad's API
+- Confirms hostname matches
 
 ### Notes
+- Requires active Tailscale configuration
+- Internet connectivity needed for verification
+- Some commands may need admin privileges
 
-- The script requires an active Tailscale configuration
-- Internet connectivity is required for verification
-- Some commands may require administrative privileges
+---
+
+_More scripts will be documented as they're updated. Each script includes `--help` for detailed usage information._
