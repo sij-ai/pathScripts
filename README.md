@@ -81,7 +81,7 @@ bates /path/to/pdfs --prefix "FWS-" --digits 6 --name-prefix "FWS " --ocr
 ---
 
 
-## kip - Intelligent Python Package Installer
+## 📦 kip - Intelligent Python Package Installer
 
 A smart package installer that automates Python dependency management, supporting both mamba and pip.
 
