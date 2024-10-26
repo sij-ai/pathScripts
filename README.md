@@ -1,6 +1,10 @@
 # PATH-worthy Scripts 🛠️
 
-A collection of useful scripts for your system PATH. Here's how to get started:
+A collection of various scripts I use frequently enough to justify keeping them in my system PATH. 
+
+I haven't written documentation for all of these scripts. I might in time. 
+
+For now, here's just a few highlights. But first:
 
 ## Installation
 
