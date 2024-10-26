@@ -47,6 +47,7 @@ bates /path/to/folder --prefix "FWS-" --digits 6 --name-prefix "FWS "
 ### Key Features
 - Extracts Bates numbers from text/scanned PDFs
 - Renames files with number ranges
+- Prepare files for use with my [Bates Source Link](https://sij.ai/sij/DEVONthink/src/branch/main/Bates%20Source%20Link.scpt$0) DEVONthink script
 - Preserves original names in Finder comments
 - OCR support for scanned documents
 - Dry-run mode with `--dry-run`
