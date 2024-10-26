@@ -1,0 +1,339 @@
+#!/usr/bin/env python3
+
+"""
+Required packages:
+pip3 install pdfplumber pytesseract pdf2image  # pdf2image and pytesseract only needed if using --ocr
+
+System dependencies (only if using --ocr):
+brew install tesseract poppler  # on macOS
+# or
+sudo apt-get install tesseract-ocr poppler-utils  # on Ubuntu/Debian
+"""
+
+import os
+import sys
+import re
+import argparse
+import logging
+from pathlib import Path
+import tempfile
+import subprocess
+import pdfplumber
+
+def check_dependencies(ocr_enabled):
+    try:
+        if ocr_enabled:
+            import pytesseract
+            from pdf2image import convert_from_path
+    except ImportError as e:
+        print(f"Missing dependency: {e}")
+        print("Please install required packages:")
+        if ocr_enabled:
+            print("pip3 install pytesseract pdf2image")
+        sys.exit(1)
+
+
+import os
+import sys
+import re
+import argparse
+import logging
+from pathlib import Path
+import tempfile
+import subprocess
+
+def setup_logging(log_level):
+    """Configure logging with the specified level."""
+    numeric_level = getattr(logging, log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError(f'Invalid log level: {log_level}')
+    
+    logging.basicConfig(
+        level=numeric_level,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+
+def build_regex_pattern(prefix, num_digits):
+    """Build regex pattern based on prefix and number of digits."""
+    # Escape any special regex characters in the prefix
+    escaped_prefix = re.escape(prefix)
+    # Pattern matches the prefix followed by exactly num_digits digits
+    # and ensures no digits or letters follow
+    pattern = f"{escaped_prefix}\\d{{{num_digits}}}(?![\\d\\w])"
+    logging.debug(f"Generated regex pattern: {pattern}")
+    return pattern
+
+def set_finder_comment(file_path, comment):
+    """Set the Finder comment for a file using osascript."""
+    try:
+        # Escape special characters in both the file path and comment
+        escaped_path = str(file_path).replace('"', '\\"').replace("'", "'\\''")
+        escaped_comment = comment.replace('"', '\\"').replace("'", "'\\''")
+        
+        script = f'''
+        osascript -e 'tell application "Finder"
+            set commentPath to POSIX file "{escaped_path}" as alias
+            set comment of commentPath to "{escaped_comment}"
+        end tell'
+        '''
+        subprocess.run(script, shell=True, check=True, stderr=subprocess.PIPE)
+        logging.debug(f"Set Finder comment for {file_path} to: {comment}")
+        return True
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to set Finder comment for {file_path}: {e.stderr.decode()}")
+        return False
+    except Exception as e:
+        logging.error(f"Failed to set Finder comment for {file_path}: {e}")
+        return False
+
+def rename_with_bates(file_path, name_prefix, first_num, last_num):
+    """Rename file using Bates numbers and preserve original name in metadata."""
+    try:
+        path = Path(file_path)
+        original_name = path.name
+        new_name = f"{name_prefix}{first_num}–{last_num}{path.suffix}"
+        new_path = path.parent / new_name
+        
+        # First try to set the metadata
+        if not set_finder_comment(file_path, original_name):
+            logging.error(f"Skipping rename of {file_path} due to metadata failure")
+            return False
+            
+        # Then rename the file
+        path.rename(new_path)
+        logging.info(f"Renamed {original_name} to {new_name}")
+        return True
+    except Exception as e:
+        logging.error(f"Failed to rename {file_path}: {e}")
+        return False
+
+def ocr_page(pdf_path, page_num):
+    """OCR a specific page of a PDF."""
+    filename = Path(pdf_path).name
+    logging.debug(f"[{filename}] Running OCR on page {page_num}")
+    try:
+        # Import OCR-related modules only when needed
+        import pytesseract
+        from pdf2image import convert_from_path
+        
+        # Convert specific page to image
+        images = convert_from_path(pdf_path, first_page=page_num+1, last_page=page_num+1)
+        if not images:
+            logging.error(f"[{filename}] Failed to convert page {page_num} to image")
+            return ""
+        
+        # OCR the image
+        with tempfile.NamedTemporaryFile(suffix='.png') as tmp:
+            images[0].save(tmp.name, 'PNG')
+            text = pytesseract.image_to_string(tmp.name)
+            logging.debug(f"[{filename}] Page {page_num} OCR result: '{text}'")
+            return text
+    except Exception as e:
+        logging.error(f"[{filename}] OCR failed for page {page_num}: {str(e)}")
+        return ""
+
+def extract_text_from_page(page, pdf_path, page_num, use_ocr):
+    """Extract text from a page, using OCR if enabled and needed."""
+    filename = Path(pdf_path).name
+    # Get page dimensions
+    width = page.width
+    height = page.height
+
+    # Calculate crop box for bottom fifth of page
+    padding = 2  # 2 point padding
+    
+    # Start at 80% down the page (leaving bottom fifth)
+    y0 = max(0, min(height * 0.8, height - padding))
+    y1 = max(y0 + padding, min(height, height))
+    
+    # Use full width
+    x0 = padding
+    x1 = max(x0 + padding, min(width - padding, width))
+
+    # Ensure the crop box makes sense
+    if x1 <= x0 or y1 <= y0:
+        logging.warning(f"[{filename}] Page {page_num}: Invalid crop box dimensions, using full page")
+        x0, y0 = 0, 0
+        x1, y1 = width, height
+
+    logging.info(f"[{filename}] Page {page_num}: Page size: {width}x{height} points")
+    logging.info(f"[{filename}] Page {page_num}: Crop box: ({x0:.2f}, {y0:.2f}, {x1:.2f}, {y1:.2f})")
+    
+    try:
+        # Extract text from the crop box
+        cropped_text = page.crop((x0, y0, x1, y1)).extract_text() or ""
+        logging.info(f"[{filename}] Page {page_num}: Cropped text: '{cropped_text}'")
+        
+        # If we don't find anything in the crop, try the full page
+        if not cropped_text.strip():
+            logging.info(f"[{filename}] Page {page_num}: No text in crop box, trying full page")
+            full_text = page.extract_text() or ""
+            logging.info(f"[{filename}] Page {page_num}: Full page text: '{full_text}'")
+            return full_text
+        
+        return cropped_text
+        
+    except Exception as e:
+        logging.error(f"[{filename}] Error extracting text from page {page_num}: {str(e)}")
+        # If crop fails, try extracting text from the entire page
+        try:
+            logging.info(f"[{filename}] Attempting to extract text from full page")
+            text = page.extract_text() or ""
+            logging.info(f"[{filename}] Page {page_num}: Full page text: '{text}'")
+            return text
+        except Exception as e2:
+            logging.error(f"[{filename}] Error extracting text from full page: {str(e2)}")
+            return ""
+
+
+def extract_text_from_page_old(page, pdf_path, page_num, use_ocr):
+    """Extract text from a page, using OCR if enabled and needed."""
+    filename = Path(pdf_path).name
+    # Get page dimensions
+    width = page.width
+    height = page.height
+    
+    # Calculate crop box as relative position (bottom right corner)
+    # Use relative positioning and ensure we stay within bounds
+    x0 = min(width * 0.67, width - 10)  # Start at 2/3 of the width, but ensure we stay in bounds
+    y0 = min(height * 0.83, height - 10)  # Start at 5/6 of the height, but ensure we stay in bounds
+    x1 = width  # Full width
+    y1 = height  # Full height
+    
+    # Ensure our crop box is within bounds
+    x0 = max(0, min(x0, width))
+    y0 = max(0, min(y0, height))
+    x1 = max(0, min(x1, width))
+    y1 = max(0, min(y1, height))
+    
+    logging.debug(f"[{filename}] Page {page_num}: dimensions {width}x{height}, crop box: ({x0}, {y0}, {x1}, {y1})")
+    
+    try:
+        text = page.crop((x0, y0, x1, y1)).extract_text() or ""
+        logging.debug(f"[{filename}] Page {page_num}: extracted text: '{text}'")
+        
+        if use_ocr and len(text.split()) < 2:
+            logging.info(f"[{filename}] Page {page_num}: has less than 2 words, attempting OCR")
+            text = ocr_page(pdf_path, page_num)
+            logging.debug(f"[{filename}] Page {page_num}: OCR text: '{text}'")
+        
+        return text
+    except Exception as e:
+        logging.error(f"[{filename}] Error extracting text from page {page_num}: {str(e)}")
+        return ""
+
+def extract_bates_numbers(pdf_path, pattern, use_ocr):
+    """Extract Bates numbers from first and last page of PDF using provided pattern."""
+    filename = Path(pdf_path).name
+    logging.info(f"[{filename}] Processing PDF")
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            first_page = pdf.pages[0]
+            last_page = pdf.pages[-1]
+            
+            logging.debug(f"[{filename}] PDF has {len(pdf.pages)} pages")
+            
+            first_text = extract_text_from_page(first_page, pdf_path, 0, use_ocr)
+            last_text = extract_text_from_page(last_page, pdf_path, len(pdf.pages)-1, use_ocr)
+            
+            logging.debug(f"[{filename}] First page text: '{first_text}'")
+            logging.debug(f"[{filename}] Last page text: '{last_text}'")
+            
+            first_matches = list(re.finditer(pattern, first_text))
+            last_matches = list(re.finditer(pattern, last_text))
+            
+            logging.debug(f"[{filename}] First page matches: {[m.group(0) for m in first_matches]}")
+            logging.debug(f"[{filename}] Last page matches: {[m.group(0) for m in last_matches]}")
+            
+            first_match = first_matches[-1] if first_matches else None
+            last_match = last_matches[-1] if last_matches else None
+            
+            if first_match and last_match:
+                # Extract just the numbers from the full match
+                first_num = ''.join(filter(str.isdigit, first_match.group(0)))
+                last_num = ''.join(filter(str.isdigit, last_match.group(0)))
+                
+                logging.info(f"[{filename}] Found numbers: {first_num}–{last_num}")
+                if len(first_matches) > 1:
+                    logging.debug(f"[{filename}] Multiple matches on first page, using last match. All matches: {[m.group(0) for m in first_matches]}")
+                if len(last_matches) > 1:
+                    logging.debug(f"[{filename}] Multiple matches on last page, using last match. All matches: {[m.group(0) for m in last_matches]}")
+                return (first_num, last_num)
+            else:
+                logging.warning(f"[{filename}] No matching numbers found")
+                return None
+    except Exception as e:
+        logging.error(f"[{filename}] Error processing PDF: {str(e)}")
+        return None
+
+def process_folder(folder_path, pattern, use_ocr, dry_run=False, name_prefix=None):
+    """Process all PDFs in the specified folder."""
+    folder = Path(folder_path)
+    if not folder.exists():
+        logging.error(f"Folder does not exist: {folder_path}")
+        return
+    
+    logging.info(f"Processing folder: {folder_path}")
+    
+    pdf_count = 0
+    success_count = 0
+    rename_count = 0
+    
+    for pdf_file in folder.glob('*.pdf'):
+        pdf_count += 1
+        numbers = extract_bates_numbers(pdf_file, pattern, use_ocr)
+        if numbers:
+            success_count += 1
+            if dry_run:
+                print(f"{pdf_file.name}: {numbers[0]}–{numbers[1]}")
+            elif name_prefix is not None:
+                if rename_with_bates(pdf_file, name_prefix, numbers[0], numbers[1]):
+                    rename_count += 1
+    
+    logging.info(f"Processed {pdf_count} PDFs, successfully extracted {success_count} number pairs")
+    if not dry_run and name_prefix is not None:
+        logging.info(f"Renamed {rename_count} files")
+
+def main():
+    parser = argparse.ArgumentParser(description='Extract Bates numbers from PDFs')
+    parser.add_argument('folder', help='Path to folder containing PDFs')
+    parser.add_argument('--log', default='INFO',
+                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                        help='Set the logging level')
+    parser.add_argument('--width-start', type=float, default=0.67,
+                        help='Relative x-coordinate to start crop (0-1)')
+    parser.add_argument('--height-start', type=float, default=0.83,
+                        help='Relative y-coordinate to start crop (0-1)')
+    parser.add_argument('--prefix', type=str, default='FWS-',
+                        help='Prefix pattern to search for (default: "FWS-")')
+    parser.add_argument('--digits', type=int, default=6,
+                        help='Number of digits to match after prefix (default: 6)')
+    parser.add_argument('--ocr', action='store_true',
+                        help='Enable OCR for pages with little or no text (disabled by default)')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Only print matches without renaming files')
+    parser.add_argument('--name-prefix', type=str,
+                        help='Prefix to use when renaming files (e.g., "FWS ")')
+    
+    args = parser.parse_args()
+    
+    setup_logging(args.log)
+    
+    # Check dependencies based on whether OCR is enabled
+    check_dependencies(args.ocr)
+    
+    # Display the pattern we're looking for
+    display_pattern = f"{args.prefix}{'#' * args.digits}"
+    print(f"Looking for pattern: {display_pattern}")
+    
+    if not args.dry_run and args.name_prefix is None:
+        logging.error("Must specify --name-prefix when not in dry-run mode")
+        sys.exit(1)
+    
+    pattern = build_regex_pattern(args.prefix, args.digits)
+    process_folder(args.folder, pattern, args.ocr, args.dry_run, args.name_prefix)
+
+if __name__ == '__main__':
+    main()
+
