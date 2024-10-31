@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+
+import concurrent.futures
+import subprocess
+import glob
+import os
+import multiprocessing
+
+# Different ways to get CPU count
+logical_cores = os.cpu_count()  # All cores including hyperthreading
+physical_cores = multiprocessing.cpu_count()  # Same as above
+# For more detailed info on Apple Silicon:
+try:
+    # This works on macOS to get performance core count
+    p_cores = len([x for x in os.sched_getaffinity(0) if x < os.cpu_count()//2])
+except AttributeError:
+    p_cores = physical_cores
+
+print(f"System has {logical_cores} logical cores")
+max_workers = max(1, logical_cores - 2)  # Leave 2 cores free for system
+
+def convert_file(aax_file):
+    mp3_file = aax_file.replace('.aax', '.mp3')
+    print(f"Converting {aax_file} to {mp3_file}")
+    subprocess.run(['ffmpeg', '-activation_bytes', os.getenv('AUDIBLE_ACTIVATION_BYTES'),
+                   '-i', aax_file, mp3_file], check=True)
+
+aax_files = glob.glob('*.aax')
+if not aax_files:
+    print("No .aax files found in current directory")
+    exit(1)
+
+print(f"Found {len(aax_files)} files to convert")
+print(f"Will convert {max_workers} files simultaneously")
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+    list(executor.map(convert_file, aax_files))
+
