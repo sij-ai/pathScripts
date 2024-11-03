@@ -14,8 +14,8 @@ except LookupError:
     word_list = words.words()
 
 word_set = set(word.lower() for word in word_list)
-common_words = ['and', 'in', 'the', 'of', 'to', 'at', 'by', 'for', 'with', 'from']
-always_valid = {'the', 'a', 'an', 'and', 'or', 'but', 'nor', 'for', 'yet', 'so'}
+common_words = ['and', 'in', 'the', 'of', 'to', 'at', 'by', 'for', 'with', 'from', 'on']
+always_valid = {'the', 'a', 'an', 'and', 'or', 'but', 'nor', 'for', 'yet', 'so', 'on'}
 
 def is_word(word):
     if word.lower() in always_valid:

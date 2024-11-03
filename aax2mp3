@@ -5,10 +5,6 @@ import subprocess
 import glob
 import os
 import multiprocessing
-import re
-import nltk
-from nltk.corpus import words
-from nltk.corpus import wordnet
 
 # Different ways to get CPU count
 logical_cores = os.cpu_count()  # All cores including hyperthreading
@@ -28,59 +24,6 @@ def convert_file(aax_file):
     print(f"Converting {aax_file} to {mp3_file}")
     subprocess.run(['ffmpeg', '-activation_bytes', os.getenv('AUDIBLE_ACTIVATION_BYTES'),
                    '-i', aax_file, mp3_file], check=True)
-    return mp3_file
-
-def rename_file(mp3_file):
-    print(f"\n{'='*50}")
-    print(f"Original: {mp3_file}")
-    base, ext = os.path.splitext(mp3_file)
-    new_base = rename_base(base)
-    new_name = new_base + ext
-    print(f"New name: {new_name}")
-
-    if new_name != mp3_file:
-        try:
-            os.rename(mp3_file, new_name)
-            print(f"Renamed: {mp3_file} -> {new_name}")
-        except OSError as e:
-            print(f"Error renaming {mp3_file}: {e}")
-
-def rename_base(base):
-    words = re.split('(?<!^)(?=[A-Z])', base)
-    processed = [process_word(word) for word in words]
-    return ' '.join(''.join(processed).split())
-
-def process_word(word):
-    if word.lower() in always_valid:
-        return word
-
-    if word.lower() in word_set:
-        return word
-
-    for common in common_words:
-        if word.lower().endswith(common):
-            remainder = word[:-len(common)]
-            common_case = word[-len(common):]
-            return process_word(remainder) + ' ' + common_case
-
-    match = re.search(r'([a-zA-Z]+)(\d+)$', word)
-    if match:
-        text, num = match.groups()
-        if text.lower() in word_set:
-            return text + ' ' + num
-
-    return word
-
-word_set = set(word.lower() for word in words.words())
-common_words = ['and', 'in', 'the', 'of', 'to', 'at', 'by', 'for', 'with', 'from']
-always_valid = {'the', 'a', 'an', 'and', 'or', 'but', 'nor', 'for', 'yet', 'so'}
-try:
-    word_list = words.words()
-    nltk.download('wordnet')
-except LookupError:
-    nltk.download('words')
-    nltk.download('wordnet')
-    word_list = words.words()
 
 aax_files = glob.glob('*.aax')
 if not aax_files:
@@ -91,8 +34,6 @@ print(f"Found {len(aax_files)} files to convert")
 print(f"Will convert {max_workers} files simultaneously")
 
 with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-    mp3_files = list(executor.map(convert_file, aax_files))
+    list(executor.map(convert_file, aax_files))
 
-for mp3_file in mp3_files:
-    rename_file(mp3_file)
 
