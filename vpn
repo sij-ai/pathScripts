@@ -10,9 +10,9 @@ PRIVACY_FRIENDLY_COUNTRIES = ['Sweden', 'Switzerland', 'Germany', 'Finland', 'Ne
 
 TAILSCALE_ARGS = [
     '--exit-node-allow-lan-access',
-#    '--stateful-filtering=false',
+    '--stateful-filtering=false',
     '--accept-dns',
-    '--accept-routes',
+#    '--accept-routes',
 #    '--auto-update'
 ]
 
