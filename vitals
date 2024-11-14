@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Create a DNS rewrite rule in AdGuard home that assigns 'check.adguard.test'
+# to an IP address beginning '100.', such as the Tailscale IP of your server.
+# Alternatively, you can change the adguard_test_domain to whatever you like,
+# so long as it matches the domain of a DNS rewrite rule you created in AGH.
+
 adguard_test_domain='check.adguard.test'
 
 if [[ "$(uname)" == "Darwin" ]]; then
