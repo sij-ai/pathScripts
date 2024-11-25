@@ -10,10 +10,10 @@ PRIVACY_FRIENDLY_COUNTRIES = ['Sweden', 'Switzerland', 'Germany', 'Finland', 'Ne
 
 TAILSCALE_ARGS = [
     '--exit-node-allow-lan-access',
-    '--stateful-filtering=false',
+#    '--stateful-filtering=false',
     '--accept-dns',
 #    '--accept-routes',
-#    '--auto-update'
+    '--auto-update'
 ]
 
 def get_current_exit_node():
