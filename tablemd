@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 
 import sys
+import re
 
 def to_markdown_table(text):
     lines = text.strip().split('\n')
-    # Split each line and pad with spaces to ensure alignment
-    rows = [line.split() for line in lines]
+    
+    # Using regex to split while preserving multi-word columns
+    pattern = r'\s{2,}'  # Two or more spaces
+    rows = [re.split(pattern, line.strip()) for line in lines]
     
     # Create the markdown header row
     header = ' | '.join(rows[0])
@@ -18,6 +21,5 @@ def to_markdown_table(text):
     return f"| {header} |\n| {separator} |\n" + \
            '\n'.join(f"| {row} |" for row in data_rows)
 
-# Can be used with pipe input: ollama ls | python script.py
 print(to_markdown_table(sys.stdin.read()))
 
