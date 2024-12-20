@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+
+import sys
+
+def to_markdown_table(text):
+    lines = text.strip().split('\n')
+    # Split each line and pad with spaces to ensure alignment
+    rows = [line.split() for line in lines]
+    
+    # Create the markdown header row
+    header = ' | '.join(rows[0])
+    # Create separator row with correct number of columns
+    separator = ' | '.join(['---'] * len(rows[0]))
+    # Create data rows
+    data_rows = [' | '.join(row) for row in rows[1:]]
+    
+    # Combine all parts
+    return f"| {header} |\n| {separator} |\n" + \
+           '\n'.join(f"| {row} |" for row in data_rows)
+
+# Can be used with pipe input: ollama ls | python script.py
+print(to_markdown_table(sys.stdin.read()))
+
