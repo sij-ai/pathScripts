@@ -322,11 +322,17 @@ def subcmd_ls(args):
                         help='Recurse into subfolders.')
     parser.add_argument('path', nargs='?', default='.',
                         help='File or directory to scan. Default is current directory.')
-    known_args, _ = parser.parse_known_args(args)
+    known_args, remaining_args = parser.parse_known_args(args)
 
     path = known_args.path
     recurse = known_args.recurse
 
+    # Ensure the path exists and handle imports accordingly
+    if not os.path.exists(path):
+        print(f"Error: Path does not exist: {path}")
+        return
+
+    # Call the import finder with the specified options
     imports = find_imports_in_path(path, recurse=recurse)
     if imports:
         print("Imports found:")
@@ -334,6 +340,7 @@ def subcmd_ls(args):
             print(f" - {imp}")
     else:
         print("No Python imports found (or none that require external packages).")
+
 
 ############################
 # Main
