@@ -11,8 +11,13 @@ import os
 LOG_FILE = 'log.txt'
 
 PRIVACY_FRIENDLY_COUNTRIES = [
-    'Sweden', 'Switzerland', 'Germany',
-    'Finland', 'Netherlands', 'Norway'
+    'Finland',
+    'Germany',
+    'Iceland',
+    'Netherlands',
+    'Norway',
+    'Sweden',
+    'Switzerland'
 ]
 
 TAILSCALE_ARGS = [
