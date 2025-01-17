@@ -263,6 +263,39 @@ Scripts to automate updates and management of multiple Git repositories.
 - Use absolute or relative paths for repository locations.
 - `push` will auto-configure `origin` based on directory name if missing.
 
+---
+
+## 🌐 `vitals` - System and VPN Diagnostics
+
+The `vitals` script provides detailed system diagnostics, VPN status, DNS configuration, and uptime in JSON format. It integrates with tools like AdGuard Home, NextDNS, and Tailscale for network monitoring.
+
+### Usage
+1. **Set up a DNS rewrite rule in AdGuard Home**:
+   - Assign the domain `check.adguard.test` to your Tailscale IP or any custom domain.
+   - Update the `adguard_test_domain` variable in the script if using a different domain.
+
+2. **Run the script**:
+   ```bash
+   ./vitals
+   ```
+
+   Example output (JSON):
+   ```json
+   {
+       "local_ip": "192.168.1.2",
+       "wan_connected": true,
+       "wan_ip": "185.213.155.74",
+       "has_tailscale": true,
+       "tailscale_ip": "100.100.100.1",
+       "mullvad_exitnode": true,
+       "mullvad_hostname": "de-ber-wg-001.mullvad.ts.net",
+       "nextdns_connected": true,
+       "nextdns_protocol": "DoH",
+       "adguard_connected": true,
+       "uptime": "up 3 days, 2 hours, 15 minutes"
+   }
+   ```
+
 --- 
 
 ## 🔒 vpn - Tailscale Exit Node Manager
