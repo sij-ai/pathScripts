@@ -217,12 +217,32 @@ def check_library_on_pypi(library):
     Returns True if 'library' is on PyPI, else False.
     Using urllib to avoid external dependencies.
     """
+    import urllib.request
     url = f"https://pypi.org/pypi/{library}/json"
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
             return (resp.status == 200)  # 200 => available
     except (urllib.error.URLError, urllib.error.HTTPError, ValueError):
         return False
+
+############################
+# Writing to requirements/missing
+############################
+
+def append_to_file(line, filename):
+    """
+    Append 'line' to 'filename' only if it's not already in there.
+    """
+    if not os.path.isfile(filename):
+        with open(filename, 'w') as f:
+            f.write(line + '\n')
+        return
+
+    with open(filename, 'r') as f:
+        lines = {l.strip() for l in f.readlines() if l.strip()}
+    if line not in lines:
+        with open(filename, 'a') as f:
+            f.write(line + '\n')
 
 ############################
 # Subcommand: install
@@ -316,18 +336,30 @@ def subcmd_install(args):
 
 def subcmd_ls(parsed_args):
     """
-    Called with the top-level parser's result.
+    Gathers imports, displays them, then writes them to requirements.txt or missing-packages.txt
+    just like the original import_finder script did.
     """
     path = parsed_args.path
     recurse = parsed_args.recurse
 
     imports = find_imports_in_path(path, recurse=recurse)
-    if imports:
-        print("Imports found:")
-        for imp in sorted(imports):
-            print(f" - {imp}")
-    else:
+    if not imports:
         print("No Python imports found (or none that require external packages).")
+        return
+
+    print("Imports found:")
+    for imp in sorted(imports):
+        print(f" - {imp}")
+
+    # Now we replicate the logic of import_finder:
+    # If on PyPI => requirements.txt; else => missing-packages.txt
+    for lib in sorted(imports):
+        if check_library_on_pypi(lib):
+            append_to_file(lib, 'requirements.txt')
+        else:
+            append_to_file(lib, 'missing-packages.txt')
+
+    print("\nWrote results to requirements.txt (PyPI-available) and missing-packages.txt (unavailable).")
 
 ############################
 # Main
@@ -355,7 +387,7 @@ def main():
     # Subcommand: ls
     ls_parser = subparsers.add_parser(
         'ls',
-        help="List imports in a file/folder. Use '-r' to recurse."
+        help="List imports in a file/folder (and write them to requirements.txt/missing-packages.txt)."
     )
     ls_parser.add_argument(
         '-r', '--recurse',
@@ -375,6 +407,7 @@ def main():
         # We manually parse the remainder ourselves in subcmd_install
         # so we pass them as is
         subcmd_install(parsed_args.args)
+
     elif parsed_args.subcommand == 'ls':
         subcmd_ls(parsed_args)
 
