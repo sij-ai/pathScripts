@@ -223,7 +223,30 @@ linecount .py .sh    # Count lines only in .py and .sh files
 
 --- 
 
-Here’s the updated and refined documentation for the `push` and `pull` scripts:
+## 🔪 `murder` - Force-Kill Processes by Name or Port
+
+A utility script to terminate processes by their name or by the port they are listening on:
+- If the argument is **numeric**, the script will terminate all processes listening on the specified port.
+- If the argument is **text**, the script will terminate all processes matching the given name.
+
+### Usage Examples
+```bash
+# Kill all processes listening on port 8080
+sudo murder 8080
+
+# Kill all processes with "node" in their name
+sudo murder node
+```
+
+### Features & Notes
+- Automatically detects whether the input is a **port** or a **process name**.
+- Uses `lsof` to find processes listening on a specified port.
+- Finds processes by name using `ps` and kills them using their process ID (PID).
+- Ignores the `grep` process itself when searching for process names. 
+
+### Notes
+- Requires `sudo` privileges.
+- Use with caution, as it forcefully terminates processes.
 
 ---
 
