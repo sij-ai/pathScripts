@@ -65,8 +65,7 @@ def which(cmd):
     """
     Check if `cmd` is on PATH. Returns True if found, else False.
     """
-    paths = os.environ["PATH"].split(os.pathsep)
-    for pth in paths:
+    for pth in os.environ["PATH"].split(os.pathsep):
         cmd_path = os.path.join(pth, cmd)
         if os.path.isfile(cmd_path) and os.access(cmd_path, os.X_OK):
             return True
@@ -315,14 +314,12 @@ def subcmd_install(args):
 # Subcommand: ls
 ############################
 
-def subcmd_ls(args):
-    parser = argparse.ArgumentParser(prog='deps ls', description="List Python imports in a file/folder.")
-    parser.add_argument('-r', '--recurse', action='store_true', help='Recurse into subfolders.')
-    parser.add_argument('path', nargs='?', default='.', help='File or directory to scan. Default is current directory.')
-    
-    known_args = parser.parse_args(args)
-    path = known_args.path
-    recurse = known_args.recurse
+def subcmd_ls(parsed_args):
+    """
+    Called with the top-level parser's result.
+    """
+    path = parsed_args.path
+    recurse = parsed_args.recurse
 
     imports = find_imports_in_path(path, recurse=recurse)
     if imports:
@@ -341,27 +338,45 @@ def main():
     subparsers = parser.add_subparsers(dest='subcommand', required=True)
 
     # Subcommand: install
-    install_parser = subparsers.add_parser('install',
-        help="Install packages or dependencies from .py files / current folder / subfolders.")
-    install_parser.add_argument('args', nargs=argparse.REMAINDER,
+    install_parser = subparsers.add_parser(
+        'install',
+        help="Install packages or dependencies from .py files / current folder / subfolders."
+    )
+    install_parser.add_argument(
+        'args',
+        nargs=argparse.REMAINDER,
         help=(
             "If empty, scans current dir. If '-r' only, scans recursively. "
             "Otherwise, pass script names, package names, or '-r <file>'. "
             "Use --no-conda to skip mamba/conda usage."
-        ))
+        )
+    )
 
     # Subcommand: ls
-    ls_parser = subparsers.add_parser('ls',
-        help="List imports in a file/folder. Use '-r' to recurse.")
-    ls_parser.add_argument('ls_args', nargs=argparse.REMAINDER,
-        help="Add '-r' plus optional path to scan. E.g. `deps ls -r src`.")
+    ls_parser = subparsers.add_parser(
+        'ls',
+        help="List imports in a file/folder. Use '-r' to recurse."
+    )
+    ls_parser.add_argument(
+        '-r', '--recurse',
+        action='store_true',
+        help='Recurse into subfolders.'
+    )
+    ls_parser.add_argument(
+        'path',
+        nargs='?',
+        default='.',
+        help='File or directory to scan (default is current directory).'
+    )
 
     parsed_args = parser.parse_args()
 
     if parsed_args.subcommand == 'install':
+        # We manually parse the remainder ourselves in subcmd_install
+        # so we pass them as is
         subcmd_install(parsed_args.args)
     elif parsed_args.subcommand == 'ls':
-        subcmd_ls(parsed_args.ls_args)
+        subcmd_ls(parsed_args)
 
 if __name__ == "__main__":
     main()
