@@ -141,53 +141,58 @@ The Weird and the Eerie ep 7.aax
 
 --- 
 
-## 📦 `kip` - Intelligent Python Package Installer
+## 📦 `deps` - Unified Python Dependency Manager
 
-A smart package installer that automates Python dependency management, supporting both mamba and pip.
-
-### Setup
-```bash
-chmod +x kip
-```
+A single script that analyzes `import` statements in .py files and installs dependencies using mamba/conda or pip.
 
 ### Usage
 ```bash
-kip <package1> [<package2> ...]  # Install specific packages
-kip <script.py>                  # Install from Python file
-kip -r <requirements.txt>        # Install from requirements file
+deps <subcommand> ...
 ```
 
-### Key Features
-- Smart import detection in Python files
-- Handles package name corrections automatically
-- Uses mamba first, falls back to pip
-- Supports multiple installation methods
-- Filters out built-in modules
+#### Subcommands
 
-### Examples
-```bash
-# Install single package
-kip requests
+1. **`ls`**  
+   Analyzes `.py` files for external imports:
+   - Writes PyPI-available packages to `requirements.txt`.
+   - Writes unavailable packages to `missing-packages.txt`.
 
-# Analyze script and install dependencies
-kip analysis.py
+   **Examples**:
+   ```bash
+   deps ls            # Analyze current directory (no recursion)
+   deps ls -r         # Recursively analyze current directory
+   deps ls src        # Analyze a 'src' folder
+   deps ls -r src     # Recursively analyze 'src'
+   ```
 
-# Install from requirements
-kip -r requirements.txt
-```
+2. **`install`**  
+   Installs Python packages either by analyzing local imports or from explicit arguments.  
+   - **Conda Environment Detection**: If in a conda environment, tries `mamba` (if installed), else `conda`.  
+   - **Fallback** to `pip` if conda tool fails or is unavailable.  
+   - **`--no-conda`**: Skip conda/mamba entirely and go straight to pip.
 
-### Package Corrections
-Automatically corrects common package names:
-- `yaml` → `pyyaml`
-- `dateutil` → `python-dateutil`
-- `dotenv` → `python-dotenv`
-- `newspaper` → `newspaper3k`
+   **Examples**:
+   ```bash
+   deps install            # Analyze current folder, install discovered packages (no recursion)
+   deps install -r         # Same as above but recursive
+   deps install requests   # Directly install 'requests'
+   deps install script.py  # Analyze and install packages from 'script.py'
+   deps install -R requirements.txt  # Install from a requirements file
+   deps install requests --no-conda  # Skip conda/mamba, use pip only
+   ```
+
+### How It Works
+- **Scanning Imports**: Locates `import ...` and `from ... import ...` lines in `.py` files, skipping built-in modules.  
+- **PyPI Check**: Uses `urllib` to confirm package availability at `pypi.org`.  
+- **Requirements & Missing Packages**: If you run `deps ls`, discovered imports go into `requirements.txt` (available) or `missing-packages.txt` (unavailable).  
+- **Installation**: For `deps install`:
+  - If no extra arguments, it auto-discovers imports in the current directory (optionally with `-r`) and installs only PyPI-available ones.  
+  - If passed packages, `.py` files, or `-R <reqfile>`, it installs those specifically.  
+  - By default, tries conda environment tools first (mamba or conda) if in a conda environment, otherwise pip.  
 
 ### Notes
-- Requires Python 3.x
-- Works with mamba or pip
-- Provides clear installation feedback
-- Ignores built-in modules and generic names
+- If `mamba` or `conda` is available in your environment, `deps install` will prefer that. Otherwise, it uses pip.  
+- You can run `deps ls` repeatedly to keep updating `requirements.txt` and `missing-packages.txt`.
 
 ---
 
