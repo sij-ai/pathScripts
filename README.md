@@ -116,7 +116,7 @@ Renames files in the current directory by splitting camelCase, PascalCase, and o
 ### Usage
 Run the script in the directory containing the files you want to rename:
 ```bash
-./camel
+camel
 ```
 
 ### Examples
@@ -218,6 +218,10 @@ linecount .py .sh    # Count lines only in .py and .sh files
 
 --- 
 
+Here’s the updated and refined documentation for the `push` and `pull` scripts:
+
+---
+
 ## 🔄 `push` & `pull` - Bulk Git Repository Management
 
 Scripts to automate updates and management of multiple Git repositories.
@@ -225,13 +229,16 @@ Scripts to automate updates and management of multiple Git repositories.
 ### Setup
 
 1. **Create a Repository List**  
-   Add repository paths to `repos.txt` in the same directory as the scripts, one per line:
+   Add repository paths to `~/.repos.txt`, one per line:
    ```plaintext
-   ~/workshop/sijapi
-   ~/workshop/scripts/gitea/pathScripts
+   ~/sijapi
    ~/workshop/Nova/Themes/Neonva/neonva.novaextension
-   ~/workshop/scripts/Swiftbar
+   ~/scripts/pathScripts
+   ~/scripts/Swiftbar
    ```
+
+   - Use `~` for home directory paths or replace it with absolute paths.
+   - Empty lines and lines starting with `#` are ignored.
 
 2. **Make Scripts Executable**  
    ```bash
@@ -240,28 +247,29 @@ Scripts to automate updates and management of multiple Git repositories.
 
 3. **Run the Scripts**  
    ```bash
-   ./pull    # Pulls the latest changes from all repositories
-   ./push    # Pulls, stages, commits, and pushes local changes
+   pull    # Pulls the latest changes from all repositories
+   push    # Pulls, stages, commits, and pushes local changes
    ```
 
 ### Features
 
 #### `pull`
-- Recursively pulls the latest changes from all repositories listed in `repos.txt`.
-- Skips directories that are not Git repositories.
-- Forces pull to ensure synchronization.
+- Recursively pulls the latest changes from all repositories listed in `~/.repos.txt`.
+- Automatically expands `~` to the home directory.
+- Skips directories that do not exist or are not Git repositories.
+- Uses `git pull --force` to ensure synchronization.
 
 #### `push`
-- Pulls the latest changes.
+- Pulls the latest changes from the current branch.
 - Stages and commits all local changes with an auto-generated message: `Auto-update: <timestamp>`.
 - Pushes updates to the current branch.
-- Configures the `origin` remote automatically if missing.
+- Configures the `origin` remote automatically if missing, using a URL based on the directory name.
 
 ### Notes
-- Both scripts skip empty lines and comments (`#`) in `repos.txt`.
-- Ensure `repos.txt` is in the same directory as the scripts.
-- Use absolute or relative paths for repository locations.
-- `push` will auto-configure `origin` based on directory name if missing.
+- Both scripts assume `~/.repos.txt` is the repository list file. You can update the `REPOS_FILE` variable if needed.
+- Use absolute paths or ensure `~` is correctly expanded to avoid issues.
+- The scripts skip non-existent directories and invalid Git repositories.
+- `push` will attempt to set the `origin` remote automatically if it is missing.
 
 ---
 
@@ -276,7 +284,7 @@ The `vitals` script provides detailed system diagnostics, VPN status, DNS config
 
 2. **Run the script**:
    ```bash
-   ./vitals
+   vitals
    ```
 
    Example output (JSON):
