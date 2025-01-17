@@ -137,10 +137,9 @@ Automatically corrects common package names:
 
 ---
 
-
 ## 🔒 vpn - Tailscale Exit Node Manager
 
-Privacy-focused Tailscale exit node management.
+Privacy-focused Tailscale exit node management with automated logging.
 
 ### Setup
 ```bash
@@ -149,39 +148,40 @@ pip3 install requests
 
 ### Usage
 ```bash
-vpn <action>  # actions: start, stop, new, shh
+vpn <action> [<country>]  # Actions: start, stop, new, shh, to, status
 ```
 
 ### Actions
-- `start`: Connect to a suggested exit node if not already connected
-- `stop`: Disconnect from current exit node
-- `new`: Switch to a new suggested exit node
-- `shh`: Connect to a random exit node in a privacy-friendly country
+- **`start`**: Connect to a suggested exit node if not already connected.
+- **`stop`**: Disconnect from the current exit node.
+- **`new`**: Switch to a new suggested exit node.
+- **`shh`**: Connect to a random exit node in a privacy-friendly country.
+- **`to <country>`**: Connect to a random exit node in a specific country.
+- **`status`**: Display the current exit node, external IP, and connection duration.
 
-### Key Features
-- Auto-connects to suggested nodes
-- Privacy-friendly country selection (SE, CH, DE, FI, NL, NO)
-- Connection verification via Mullvad API
-- Default Tailscale arguments:
+### Features
+- **Privacy-Friendly Quick Selection**: Supports random exit nodes from:
+  `Finland`, `Germany`, `Iceland`, `Netherlands`, `Norway`, `Sweden`, `Switzerland`.
+- **Connection Verification**: Ensures exit node and IP via Mullvad API.
+- **Automated Logging**: Tracks all connections, disconnections, and IP changes in `/var/log/vpn_rotation.txt`.
+- **Default Tailscale arguments**:
   - `--exit-node-allow-lan-access`
   - `--accept-dns`
   - `--accept-routes`
 
 ### Examples
 ```bash
-vpn start  # Connect to suggested node
-vpn shh    # Connect via privacy-friendly country
+vpn start         # Connect to a suggested node.
+vpn shh           # Connect to a random privacy-friendly node.
+vpn to Germany    # Connect to a random exit node in Germany.
+vpn status        # Show current connection details.
+vpn stop          # Disconnect from the exit node.
 ```
 
-### Verification
-- Checks Tailscale's reported exit node
-- Verifies connection using Mullvad's API
-- Confirms hostname matches
-
 ### Notes
-- Requires active Tailscale configuration
-- Internet connectivity needed for verification
-- Some commands may need admin privileges
+- Requires active Tailscale configuration and internet access.
+- Logging is handled automatically in `/var/log/vpn_rotation.txt`.
+- Use `sudo` for actions requiring elevated permissions (e.g., `crontab`).
 
 ---
 
