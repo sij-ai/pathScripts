@@ -317,24 +317,16 @@ def subcmd_install(args):
 ############################
 
 def subcmd_ls(args):
-    parser = argparse.ArgumentParser(prog='deps ls', description="List Python imports in a file or directory.")
+    parser = argparse.ArgumentParser(prog='deps ls', add_help=False)
     parser.add_argument('-r', '--recurse', action='store_true',
                         help='Recurse into subfolders.')
     parser.add_argument('path', nargs='?', default='.',
-                        help='File or directory to scan. Defaults to current directory.')
-
-    # Parse the provided arguments
-    known_args = parser.parse_args(args)
+                        help='File or directory to scan. Default is current directory.')
+    known_args, _ = parser.parse_known_args(args)
 
     path = known_args.path
     recurse = known_args.recurse
 
-    # Ensure the path exists
-    if not os.path.exists(path):
-        print(f"Error: Path does not exist: {path}")
-        return
-
-    # Process imports based on the given path and recursion option
     imports = find_imports_in_path(path, recurse=recurse)
     if imports:
         print("Imports found:")
@@ -342,8 +334,6 @@ def subcmd_ls(args):
             print(f" - {imp}")
     else:
         print("No Python imports found (or none that require external packages).")
-
-
 
 ############################
 # Main
@@ -378,4 +368,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
