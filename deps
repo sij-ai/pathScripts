@@ -217,7 +217,6 @@ def check_library_on_pypi(library):
     Returns True if 'library' is on PyPI, else False.
     Using urllib to avoid external dependencies.
     """
-    import urllib.request
     url = f"https://pypi.org/pypi/{library}/json"
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
@@ -243,92 +242,6 @@ def append_to_file(line, filename):
     if line not in lines:
         with open(filename, 'a') as f:
             f.write(line + '\n')
-
-############################
-# Subcommand: install
-############################
-
-def subcmd_install(args):
-    """
-    If user typed exactly `deps install` or `deps install -r`, we gather imports from current dir,
-    check PyPI availability, and install them with conda/mamba/pip (unless --no-conda given).
-    
-    Otherwise we do the normal logic of:
-      - installing from a requirements file with `-r req.txt`
-      - installing from a .py file
-      - installing direct package names
-    """
-
-    # Check for --no-conda (remove it from args to not confuse other logic)
-    skip_conda = False
-    filtered_args = []
-    i = 0
-    while i < len(args):
-        if args[i] == '--no-conda':
-            skip_conda = True
-            i += 1
-        else:
-            filtered_args.append(args[i])
-            i += 1
-
-    args = filtered_args
-
-    # If user typed exactly: deps install (no arguments) or deps install -r (only that arg)
-    if not args or (args == ['-r']):
-        is_recursive = (args == ['-r'])
-        imports_found = find_imports_in_path('.', recurse=is_recursive)
-        if not imports_found:
-            print("No imports found in current directory.")
-            return
-        # Filter out those that are on PyPI
-        to_install = []
-        for lib in sorted(imports_found):
-            if check_library_on_pypi(lib):
-                to_install.append(lib)
-            else:
-                print(f"Skipping '{lib}' (not found on PyPI).")
-        if not to_install:
-            print("No PyPI-available packages found to install.")
-            return
-        print("Installing packages:", ', '.join(to_install))
-        for pkg in to_install:
-            install_package(pkg, skip_conda=skip_conda)
-        return
-
-    # Otherwise, normal logic with direct packages, .py files, or -r <filename>
-    packages_to_install = set()
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if arg == '-r':
-            # next arg is a requirements file
-            if i + 1 < len(args):
-                req_file = args[i + 1]
-                if os.path.isfile(req_file):
-                    pkgs = process_requirements_file(req_file)
-                    packages_to_install.update(pkgs)
-                else:
-                    print(f"Requirements file not found: {req_file}")
-                i += 2
-            else:
-                print("Error: -r requires a file path.")
-                return
-        elif arg.endswith('.py'):
-            # parse imports from that script
-            if os.path.isfile(arg):
-                pkgs = process_python_file(arg)
-                packages_to_install.update(pkgs)
-            else:
-                print(f"File not found: {arg}")
-            i += 1
-        else:
-            # treat as a direct package name
-            packages_to_install.add(arg)
-            i += 1
-
-    # Install all packages in packages_to_install
-    for pkg in sorted(packages_to_install):
-        install_package(pkg, skip_conda=skip_conda)
 
 ############################
 # Subcommand: ls
@@ -362,27 +275,86 @@ def subcmd_ls(parsed_args):
     print("\nWrote results to requirements.txt (PyPI-available) and missing-packages.txt (unavailable).")
 
 ############################
+# Subcommand: install
+############################
+
+def subcmd_install(parsed_args):
+    """
+    If the user typed no direct packages/scripts or only used '-r' for recursion with no other args,
+    we gather imports from the current dir, check PyPI availability, and install them with conda/mamba/pip
+    (unless --no-conda is given).
+    
+    Otherwise, if the user typed e.g. '-R <reqfile>', or a .py file, or direct package names, we handle them.
+    """
+    skip_conda = parsed_args.no_conda
+    is_recursive = parsed_args.recurse
+
+    # If user typed no leftover arguments or only the recursion flag, we do the "auto-scan & install" mode
+    if not parsed_args.packages:
+        # Means: "deps install" or "deps install -r"
+        imports_found = find_imports_in_path('.', recurse=is_recursive)
+        if not imports_found:
+            print("No imports found in current directory.")
+            return
+        # Filter out those that are on PyPI
+        to_install = []
+        for lib in sorted(imports_found):
+            if check_library_on_pypi(lib):
+                to_install.append(lib)
+            else:
+                print(f"Skipping '{lib}' (not found on PyPI).")
+        if not to_install:
+            print("No PyPI-available packages found to install.")
+            return
+        print("Installing packages:", ', '.join(to_install))
+        for pkg in to_install:
+            install_package(pkg, skip_conda=skip_conda)
+        return
+
+    # Otherwise, we have leftover items: direct packages, .py files, or "-R" requirements.
+    leftover_args = parsed_args.packages
+    packages_to_install = set()
+
+    i = 0
+    while i < len(leftover_args):
+        arg = leftover_args[i]
+        if arg == '-R':
+            # next arg is a requirements file
+            if i + 1 < len(leftover_args):
+                req_file = leftover_args[i + 1]
+                if os.path.isfile(req_file):
+                    pkgs = process_requirements_file(req_file)
+                    packages_to_install.update(pkgs)
+                else:
+                    print(f"Requirements file not found: {req_file}")
+                i += 2
+            else:
+                print("Error: -R requires a file path.")
+                return
+        elif arg.endswith('.py'):
+            # parse imports from that script
+            if os.path.isfile(arg):
+                pkgs = process_python_file(arg)
+                packages_to_install.update(pkgs)
+            else:
+                print(f"File not found: {arg}")
+            i += 1
+        else:
+            # treat as a direct package name
+            packages_to_install.add(arg)
+            i += 1
+
+    # Now install them
+    for pkg in sorted(packages_to_install):
+        install_package(pkg, skip_conda=skip_conda)
+
+############################
 # Main
 ############################
 
 def main():
     parser = argparse.ArgumentParser(description='deps - Manage and inspect Python dependencies.')
     subparsers = parser.add_subparsers(dest='subcommand', required=True)
-
-    # Subcommand: install
-    install_parser = subparsers.add_parser(
-        'install',
-        help="Install packages or dependencies from .py files / current folder / subfolders."
-    )
-    install_parser.add_argument(
-        'args',
-        nargs=argparse.REMAINDER,
-        help=(
-            "If empty, scans current dir. If '-r' only, scans recursively. "
-            "Otherwise, pass script names, package names, or '-r <file>'. "
-            "Use --no-conda to skip mamba/conda usage."
-        )
-    )
 
     # Subcommand: ls
     ls_parser = subparsers.add_parser(
@@ -400,16 +372,39 @@ def main():
         default='.',
         help='File or directory to scan (default is current directory).'
     )
+    ls_parser.set_defaults(func=subcmd_ls)
+
+    # Subcommand: install
+    install_parser = subparsers.add_parser(
+        'install',
+        help="Install packages or dependencies from .py files / current folder / subfolders."
+    )
+    install_parser.add_argument(
+        '-r', '--recurse',
+        action='store_true',
+        help="If no packages are specified, scanning current dir for imports will be recursive."
+    )
+    install_parser.add_argument(
+        '--no-conda',
+        action='store_true',
+        help="Skip using mamba/conda entirely and install only with pip."
+    )
+    install_parser.add_argument(
+        'packages',
+        nargs='*',
+        help=(
+            "Direct package names, .py files, or '-R <reqfile>'. If empty, scans current dir; "
+            "if combined with -r, scans recursively. Example usage:\n"
+            "  deps install requests flask\n"
+            "  deps install script.py\n"
+            "  deps install -R requirements.txt\n"
+            "  deps install -r   (recursively scan current dir)\n"
+        )
+    )
+    install_parser.set_defaults(func=subcmd_install)
 
     parsed_args = parser.parse_args()
-
-    if parsed_args.subcommand == 'install':
-        # We manually parse the remainder ourselves in subcmd_install
-        # so we pass them as is
-        subcmd_install(parsed_args.args)
-
-    elif parsed_args.subcommand == 'ls':
-        subcmd_ls(parsed_args)
+    parsed_args.func(parsed_args)
 
 if __name__ == "__main__":
     main()
