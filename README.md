@@ -137,6 +137,33 @@ Automatically corrects common package names:
 
 ---
 
+## 📏 linecount - Line Counting Tool for Text Files
+
+Recursively counts the total lines in all text files within the current directory, with optional filtering by file extensions.
+
+### Usage
+```bash
+linecount [<extension1> <extension2> ...]
+```
+
+### Examples
+```bash
+linecount            # Count lines in all non-binary files
+linecount .py .sh    # Count lines only in .py and .sh files
+```
+
+### Key Features
+- **Recursive Search**: Processes files in the current directory and all subdirectories.
+- **Binary File Detection**: Automatically skips binary files.
+- **File Extension Filtering**: Optionally count lines in specific file types (case-insensitive).
+- **Quick Stats**: Displays the number of files scanned and total lines.
+
+### Notes
+- If no extensions are provided, all non-binary files are counted.
+- Use absolute or relative paths when running the script in custom environments.
+
+--- 
+
 ## 🔒 vpn - Tailscale Exit Node Manager
 
 Privacy-focused Tailscale exit node management with automated logging.
