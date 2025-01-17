@@ -1,5 +1,6 @@
 #!/bin/bash
 
+# Path to the file containing the list of repositories
 REPOS_FILE="./repos.txt"
 
 # Check if the repos file exists
