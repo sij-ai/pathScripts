@@ -9,7 +9,7 @@ import urllib.request
 import urllib.error
 
 ############################
-# Shared Data & Constants
+# Built-in, Known Corrections, Exclusions
 ############################
 
 BUILTIN_MODULES = {
@@ -65,11 +65,11 @@ def which(cmd):
     """
     Check if `cmd` is on PATH. Returns True if found, else False.
     """
-    for path in os.environ["PATH"].split(os.pathsep):
-        if os.path.isdir(path):
-            cmd_path = os.path.join(path, cmd)
-            if os.access(cmd_path, os.X_OK):
-                return True
+    paths = os.environ["PATH"].split(os.pathsep)
+    for pth in paths:
+        cmd_path = os.path.join(pth, cmd)
+        if os.path.isfile(cmd_path) and os.access(cmd_path, os.X_OK):
+            return True
     return False
 
 def in_conda_env():
@@ -221,8 +221,7 @@ def check_library_on_pypi(library):
     url = f"https://pypi.org/pypi/{library}/json"
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
-            # HTTP 200 => library is found
-            return (resp.status == 200)
+            return (resp.status == 200)  # 200 => available
     except (urllib.error.URLError, urllib.error.HTTPError, ValueError):
         return False
 
@@ -241,7 +240,7 @@ def subcmd_install(args):
       - installing direct package names
     """
 
-    # Check for --no-conda (we remove it from args to not confuse other logic)
+    # Check for --no-conda (remove it from args to not confuse other logic)
     skip_conda = False
     filtered_args = []
     i = 0
@@ -255,7 +254,7 @@ def subcmd_install(args):
 
     args = filtered_args
 
-    # If user typed exactly: deps install  (no arguments) or deps install -r (only that arg)
+    # If user typed exactly: deps install (no arguments) or deps install -r (only that arg)
     if not args or (args == ['-r']):
         is_recursive = (args == ['-r'])
         imports_found = find_imports_in_path('.', recurse=is_recursive)
@@ -317,13 +316,11 @@ def subcmd_install(args):
 ############################
 
 def subcmd_ls(args):
-    parser = argparse.ArgumentParser(prog='deps ls', add_help=False)
-    parser.add_argument('-r', '--recurse', action='store_true',
-                        help='Recurse into subfolders.')
-    parser.add_argument('path', nargs='?', default='.',
-                        help='File or directory to scan. Default is current directory.')
-    known_args, _ = parser.parse_known_args(args)
-
+    parser = argparse.ArgumentParser(prog='deps ls', description="List Python imports in a file/folder.")
+    parser.add_argument('-r', '--recurse', action='store_true', help='Recurse into subfolders.')
+    parser.add_argument('path', nargs='?', default='.', help='File or directory to scan. Default is current directory.')
+    
+    known_args = parser.parse_args(args)
     path = known_args.path
     recurse = known_args.recurse
 
@@ -357,7 +354,7 @@ def main():
     ls_parser = subparsers.add_parser('ls',
         help="List imports in a file/folder. Use '-r' to recurse.")
     ls_parser.add_argument('ls_args', nargs=argparse.REMAINDER,
-        help="Optional '-r' plus path (file/folder).")
+        help="Add '-r' plus optional path to scan. E.g. `deps ls -r src`.")
 
     parsed_args = parser.parse_args()
 
