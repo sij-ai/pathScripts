@@ -218,14 +218,14 @@ linecount .py .sh    # Count lines only in .py and .sh files
 
 --- 
 
-## 🔄 up - Bulk Repository Updater
+## 🔄 push & pull - Bulk Git Repository Management
 
-Automatically pulls, stages, commits, and pushes changes for multiple Git repositories.
+Scripts to automate updates and management of multiple Git repositories.
 
 ### Setup
 
 1. **Create a Repository List**  
-   Add repository paths to `~/myrepos.txt`, one per line:
+   Add repository paths to `repos.txt` in the same directory as the scripts, one per line:
    ```plaintext
    ~/workshop/sijapi
    ~/workshop/scripts/gitea/pathScripts
@@ -233,23 +233,37 @@ Automatically pulls, stages, commits, and pushes changes for multiple Git reposi
    ~/workshop/scripts/Swiftbar
    ```
 
-2. **Run the Script**  
+2. **Make Scripts Executable**  
    ```bash
-   ./up
+   chmod +x push pull
+   ```
+
+3. **Run the Scripts**  
+   ```bash
+   ./pull    # Pulls the latest changes from all repositories
+   ./push    # Pulls, stages, commits, and pushes local changes
    ```
 
 ### Features
 
-- Pulls the latest changes from each repository.
-- Stages and commits local changes.
+#### `pull`
+- Recursively pulls the latest changes from all repositories listed in `repos.txt`.
+- Skips directories that are not Git repositories.
+- Forces pull to ensure synchronization.
+
+#### `push`
+- Pulls the latest changes.
+- Stages and commits all local changes with an auto-generated message: `Auto-update: <timestamp>`.
 - Pushes updates to the current branch.
-- Automatically configures the `origin` remote if missing.
+- Configures the `origin` remote automatically if missing.
 
 ### Notes
-- Skips directories that aren’t Git repositories.
-- Commit messages are auto-generated as `Auto-update: <timestamp>`.
+- Both scripts skip empty lines and comments (`#`) in `repos.txt`.
+- Ensure `repos.txt` is in the same directory as the scripts.
+- Use absolute or relative paths for repository locations.
+- `push` will auto-configure `origin` based on directory name if missing.
 
----
+--- 
 
 ## 🔒 vpn - Tailscale Exit Node Manager
 
