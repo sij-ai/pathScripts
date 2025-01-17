@@ -33,6 +33,7 @@ build/
 *.egg-info/
 
 # Temporary files
+log.txt
 *.tmp
 *.bak
 *.swp
