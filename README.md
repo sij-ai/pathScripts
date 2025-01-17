@@ -35,7 +35,7 @@ chmod +x *
 
 ---
 
-## 📄 bates - PDF Bates Number Tool
+## 📄 `bates` - PDF Bates Number Tool
 
 Extracts and renames PDFs based on Bates numbers.
 
@@ -86,7 +86,7 @@ bates /path/to/pdfs --prefix "FWS-" --digits 6 --name-prefix "FWS " --ocr
 
 ---
 
-## 🐪 camel - File Renaming Utility
+## 🐪 `camel` - File Renaming Utility
 
 Renames files in the current directory by splitting camelCase, PascalCase, and other compound words into readable, spaced formats.
 
@@ -141,7 +141,7 @@ The Weird and the Eerie ep 7.aax
 
 --- 
 
-## 📦 kip - Intelligent Python Package Installer
+## 📦 `kip` - Intelligent Python Package Installer
 
 A smart package installer that automates Python dependency management, supporting both mamba and pip.
 
@@ -191,7 +191,7 @@ Automatically corrects common package names:
 
 ---
 
-## 📏 linecount - Line Counting Tool for Text Files
+## 📏 `linecount` - Line Counting Tool for Text Files
 
 Recursively counts the total lines in all text files within the current directory, with optional filtering by file extensions.
 
@@ -218,7 +218,7 @@ linecount .py .sh    # Count lines only in .py and .sh files
 
 --- 
 
-## 🔄 push & pull - Bulk Git Repository Management
+## 🔄 `push` & `pull` - Bulk Git Repository Management
 
 Scripts to automate updates and management of multiple Git repositories.
 
@@ -298,7 +298,7 @@ The `vitals` script provides detailed system diagnostics, VPN status, DNS config
 
 --- 
 
-## 🔒 vpn - Tailscale Exit Node Manager
+## 🔒 `vpn` - Tailscale Exit Node Manager
 
 Privacy-focused Tailscale exit node management with automated logging.
 
