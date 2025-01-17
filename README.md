@@ -86,6 +86,60 @@ bates /path/to/pdfs --prefix "FWS-" --digits 6 --name-prefix "FWS " --ocr
 
 ---
 
+## 🐪 camel - File Renaming Utility
+
+Renames files in the current directory by splitting camelCase, PascalCase, and other compound words into readable, spaced formats.
+
+### Features
+
+- **Smart Splitting**:
+  - Handles camelCase, PascalCase, underscores (`_`), hyphens (`-`), and spaces.
+  - Preserves file extensions.
+  - Splits on capital letters and numbers intelligently.
+- **Word Detection**:
+  - Uses NLTK’s English word corpus and WordNet to identify valid words.
+  - Common words like "and", "the", "of" are always treated as valid.
+- **Automatic Renaming**:
+  - Processes all files in the current directory (ignores hidden files).
+  - Renames files in-place with clear logging.
+
+### Setup
+1. Install dependencies:
+   ```bash
+   pip3 install nltk
+   ```
+2. Download NLTK data:
+   ```bash
+   python3 -m nltk.downloader words wordnet
+   ```
+
+### Usage
+Run the script in the directory containing the files you want to rename:
+```bash
+./camel
+```
+
+### Examples
+Before running the script:
+```plaintext
+Anti-OedipusCapitalismandSchizophrenia_ep7.aax
+TheDawnofEverythingANewHistoryofHumanity_ep7.aax
+TheWeirdandtheEerie_ep7.aax
+```
+
+After running the script:
+```plaintext
+Anti Oedipus Capitalism and Schizophrenia ep 7.aax
+The Dawn of Everything A New History of Humanity ep 7.aax
+The Weird and the Eerie ep 7.aax
+```
+
+### Notes
+- Hidden files (starting with `.`) are skipped.
+- If a word isn’t found in the dictionary, it’s left unchanged.
+- File extensions are preserved during renaming.
+
+--- 
 
 ## 📦 kip - Intelligent Python Package Installer
 
