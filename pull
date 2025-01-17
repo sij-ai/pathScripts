@@ -17,6 +17,9 @@ while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
     # Skip empty lines and lines starting with #
     [[ -z "$repo_path" || "$repo_path" == \#* ]] && continue
 
+    # Expand tilde to home directory
+    repo_path="${repo_path/#\~/$HOME}"
+
     echo "Processing repository: $repo_path"
 
     # Navigate to the project directory
@@ -43,4 +46,3 @@ while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
 done < "$REPOS_FILE"
 
 echo "All repositories processed."
-
