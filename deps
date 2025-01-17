@@ -78,24 +78,43 @@ def in_conda_env():
     """
     return "CONDA_DEFAULT_ENV" in os.environ
 
+# We'll detect once at runtime (if in a conda env and skip_conda=False):
+# we either pick 'mamba' if available, else 'conda' if available, else None
+PREFERRED_CONDA_TOOL = None
+
+def detect_conda_tool(skip_conda=False):
+    """
+    Decide which tool to use for conda-based installation:
+    1) If skip_conda is True or not in a conda env -> return None
+    2) If mamba is installed, return 'mamba'
+    3) Else if conda is installed, return 'conda'
+    4) Else return None
+    """
+    if skip_conda or not in_conda_env():
+        return None
+    if which("mamba"):
+        return "mamba"
+    elif which("conda"):
+        return "conda"
+    return None
+
 def is_package_installed(package, skip_conda=False):
     """
-    Checks if 'package' is installed in either mamba/conda (if in conda env and skip_conda=False) or pip.
+    Checks if 'package' is installed with the chosen conda tool or pip.
     """
-    if not skip_conda and in_conda_env():
-        # Try mamba or conda
-        if which("mamba"):
-            returncode, stdout, _ = run_command(["mamba", "list"])
-            if returncode == 0:
-                pattern = rf"^{re.escape(package)}\s"
-                if re.search(pattern, stdout, re.MULTILINE):
-                    return True
-        elif which("conda"):
-            returncode, stdout, _ = run_command(["conda", "list"])
-            if returncode == 0:
-                pattern = rf"^{re.escape(package)}\s"
-                if re.search(pattern, stdout, re.MULTILINE):
-                    return True
+    conda_tool = detect_conda_tool(skip_conda)
+    if conda_tool == "mamba":
+        returncode, stdout, _ = run_command(["mamba", "list"])
+        if returncode == 0:
+            pattern = rf"^{re.escape(package)}\s"
+            if re.search(pattern, stdout, re.MULTILINE):
+                return True
+    elif conda_tool == "conda":
+        returncode, stdout, _ = run_command(["conda", "list"])
+        if returncode == 0:
+            pattern = rf"^{re.escape(package)}\s"
+            if re.search(pattern, stdout, re.MULTILINE):
+                return True
 
     # Fall back to pip
     returncode, stdout, _ = run_command(["pip", "list"])
@@ -105,31 +124,31 @@ def is_package_installed(package, skip_conda=False):
 def install_package(package, skip_conda=False):
     """
     Installs 'package'.
-      1) If skip_conda=False and in conda env -> try mamba or conda
-      2) Fallback to pip
+      1) Decide once if we can use 'mamba' or 'conda' (if skip_conda=False and in conda env).
+      2) Try that conda tool for installation
+      3) If that fails or not found, fallback to pip
     """
     if is_package_installed(package, skip_conda=skip_conda):
         print(f"Package '{package}' is already installed.")
         return
 
-    if not skip_conda and in_conda_env():
-        # check mamba
-        if which("mamba"):
-            print(f"Installing '{package}' with mamba...")
-            returncode, _, _ = run_command(["mamba", "install", "-y", "-c", "conda-forge", package])
-            if returncode == 0:
-                print(f"Successfully installed '{package}' via mamba.")
-                return
-            print(f"mamba failed for '{package}', falling back to conda/pip...")
+    conda_tool = detect_conda_tool(skip_conda)
 
-        # check conda
-        if which("conda"):
-            print(f"Installing '{package}' with conda...")
-            returncode, _, _ = run_command(["conda", "install", "-y", "-c", "conda-forge", package])
-            if returncode == 0:
-                print(f"Successfully installed '{package}' via conda.")
-                return
-            print(f"conda failed for '{package}', falling back to pip...")
+    if conda_tool == "mamba":
+        print(f"Installing '{package}' with mamba...")
+        returncode, _, _ = run_command(["mamba", "install", "-y", "-c", "conda-forge", package])
+        if returncode == 0:
+            print(f"Successfully installed '{package}' via mamba.")
+            return
+        print(f"mamba failed for '{package}'. Falling back to pip...")
+
+    elif conda_tool == "conda":
+        print(f"Installing '{package}' with conda...")
+        returncode, _, _ = run_command(["conda", "install", "-y", "-c", "conda-forge", package])
+        if returncode == 0:
+            print(f"Successfully installed '{package}' via conda.")
+            return
+        print(f"conda failed for '{package}'. Falling back to pip...")
 
     # fallback: pip
     print(f"Installing '{package}' with pip...")
