@@ -164,6 +164,39 @@ linecount .py .sh    # Count lines only in .py and .sh files
 
 --- 
 
+## 🔄 up - Bulk Repository Updater
+
+Automatically pulls, stages, commits, and pushes changes for multiple Git repositories.
+
+### Setup
+
+1. **Create a Repository List**  
+   Add repository paths to `~/myrepos.txt`, one per line:
+   ```plaintext
+   ~/workshop/sijapi
+   ~/workshop/scripts/gitea/pathScripts
+   ~/workshop/Nova/Themes/Neonva/neonva.novaextension
+   ~/workshop/scripts/Swiftbar
+   ```
+
+2. **Run the Script**  
+   ```bash
+   ./up
+   ```
+
+### Features
+
+- Pulls the latest changes from each repository.
+- Stages and commits local changes.
+- Pushes updates to the current branch.
+- Automatically configures the `origin` remote if missing.
+
+### Notes
+- Skips directories that aren’t Git repositories.
+- Commit messages are auto-generated as `Auto-update: <timestamp>`.
+
+---
+
 ## 🔒 vpn - Tailscale Exit Node Manager
 
 Privacy-focused Tailscale exit node management with automated logging.
