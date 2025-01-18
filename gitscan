@@ -20,4 +20,3 @@ sort -u "$output_file" -o "$output_file"
 
 echo "Duplicate entries removed. Final list:"
 cat "$output_file"
-
