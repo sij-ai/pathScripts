@@ -31,12 +31,17 @@ def main():
     args = parser.parse_args()
 
     audio_path = convert_to_mp3(args.file)
-    task_mode = "translate" if args.translate else "transcribe"
-
-    whisper = LightningWhisperMLX(model="distil-medium", batch_size=12, quant=None)
     
-    result = whisper.transcribe(audio_path=audio_path, task=task_mode)['text']
-    print(result)
+    # Selecting a valid model
+    whisper = LightningWhisperMLX(model="large-v3", batch_size=12, quant=None)
+    
+    if args.translate:
+        print("Translation mode enabled.")
+        result = whisper.transcribe(audio_path=audio_path, language="en")  # Explicitly setting language to English
+    else:
+        result = whisper.transcribe(audio_path=audio_path)
+
+    print(result['text'])
 
 if __name__ == "__main__":
     main()
