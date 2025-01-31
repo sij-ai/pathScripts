@@ -1,0 +1,43 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import sys
+import tempfile
+import subprocess
+from lightning_whisper_mlx import LightningWhisperMLX
+
+def convert_to_mp3(input_path):
+    """Convert input file to MP3 using ffmpeg if necessary, storing in a temporary directory."""
+    if input_path.lower().endswith(".mp3"):
+        return input_path  # No conversion needed
+
+    temp_dir = tempfile.mkdtemp()
+    output_path = os.path.join(temp_dir, "converted.mp3")
+
+    try:
+        subprocess.run(["ffmpeg", "-y", "-i", input_path, "-q:a", "2", output_path],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError:
+        sys.exit("Error: Failed to convert file to MP3. Ensure ffmpeg is installed.")
+
+    return output_path
+
+def main():
+    parser = argparse.ArgumentParser(description="Transcribe or translate audio using LightningWhisperMLX.")
+    parser.add_argument("file", help="Path to the audio file.")
+    parser.add_argument("--translate", action="store_true", help="Enable translation mode.")
+
+    args = parser.parse_args()
+
+    audio_path = convert_to_mp3(args.file)
+    task_mode = "translate" if args.translate else "transcribe"
+
+    whisper = LightningWhisperMLX(model="distil-medium", batch_size=12, quant=None)
+    
+    result = whisper.transcribe(audio_path=audio_path, task=task_mode)['text']
+    print(result)
+
+if __name__ == "__main__":
+    main()
+
