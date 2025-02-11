@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+
+import sys
+from newspaper import Article
+import textwrap
+
+def format_article(url):
+    try:
+        # Initialize and download the article
+        article = Article(url)
+        article.download()
+        article.parse()
+        
+        # Format the title
+        output = f"# {article.title}\n\n"
+        
+        # Format the authors
+        if article.authors:
+            output += f"*{', '.join(article.authors)}*\n\n"
+        
+        # Format the text with proper wrapping and paragraph separation
+        if article.text:
+            # Split into paragraphs and wrap each one
+            paragraphs = article.text.split('\n')
+            wrapped_paragraphs = []
+            
+            for paragraph in paragraphs:
+                if paragraph.strip():  # Only process non-empty paragraphs
+                    # Wrap text at 80 characters
+                    wrapped = textwrap.fill(paragraph.strip(), width=80)
+                    wrapped_paragraphs.append(wrapped)
+            
+            output += '\n\n'.join(wrapped_paragraphs)
+        
+        return output
+    
+    except Exception as e:
+        return f"Error processing article: {str(e)}"
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: ./script.py <article_url>")
+        sys.exit(1)
+    
+    url = sys.argv[1]
+    formatted_article = format_article(url)
+    print(formatted_article)
+
+if __name__ == "__main__":
+    main()
