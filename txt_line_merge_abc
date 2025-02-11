@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+
+import sys
+
+def merge_files(file_paths):
+    if not file_paths:
+        print("At least one file path is required.")
+        return
+
+    # Read all lines from all files, including the first one
+    all_lines = set()
+    for file_path in file_paths:
+        with open(file_path, 'r') as f:
+            all_lines.update(f.read().splitlines())
+
+    # Sort the unique lines
+#    sorted_lines = sorted(all_lines)
+    sorted_lines = sorted(all_lines, key=str.lower)
+
+
+    # Write the sorted, unique lines to the first file, overwriting its contents
+    with open(file_paths[0], 'w') as f:
+        for line in sorted_lines:
+            f.write(line + '\n')
+
+    print(f"Merged {len(file_paths)} files into {file_paths[0]}")
+
+if __name__ == "__main__":
+    # Get file paths from command line arguments
+    file_paths = sys.argv[1:]
+
+    if not file_paths:
+        print("Usage: txt-line-merge-abc file1.txt file2.txt file3.txt ...")
+    else:
+        merge_files(file_paths)
+
+

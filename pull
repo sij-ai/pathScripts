@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# Path to the file containing the list of repositories
+REPOS_FILE="$HOME/.repos.txt"
+
+# Check if the repos file exists
+if [ ! -f "$REPOS_FILE" ]; then
+    echo "Error: $REPOS_FILE does not exist in the current directory."
+    exit 1
+fi
+
+# Read the repos file and process each directory
+while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
+    # Trim whitespace
+    repo_path=$(echo "$repo_path" | xargs)
+
+    # Skip empty lines and lines starting with #
+    [[ -z "$repo_path" || "$repo_path" == \#* ]] && continue
+
+    # Expand tilde to home directory
+    repo_path="${repo_path/#\~/$HOME}"
+
+    echo "Processing repository: $repo_path"
+
+    # Navigate to the project directory
+    if ! cd "$repo_path"; then
+        echo "Error: Unable to change to directory $repo_path. Skipping."
+        continue
+    fi
+
+    # Check if it's a git repository
+    if [ ! -d .git ]; then
+        echo "Warning: $repo_path is not a git repository. Skipping."
+        continue
+    fi
+
+    # Force pull the latest changes from the repository
+    echo "Force pulling latest changes..."
+    git pull --force
+
+    # Return to the original directory
+    cd - > /dev/null
+
+    echo "Update complete for $repo_path"
+    echo "----------------------------------------"
+done < "$REPOS_FILE"
+
+echo "All repositories processed."

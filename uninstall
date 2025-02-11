@@ -1,0 +1,118 @@
+#!/bin/bash
+
+# Required parameters:
+# @raycast.schemaVersion 1
+# @raycast.title Uninstall App
+# @raycast.mode fullOutput
+
+# Optional parameters:
+# @raycast.icon 🗑️
+# @raycast.argument1 { "type": "text", "placeholder": "App name" }
+
+# Documentation:
+# @raycast.description Move an application and its related files to the Trash (no interactive prompts)
+
+########################################
+# Moves a file to the Trash via AppleScript
+########################################
+move_to_trash() {
+    local file_path="$1"
+    osascript -e "tell application \"Finder\" to delete POSIX file \"$file_path\"" >/dev/null 2>&1
+}
+
+########################################
+# Uninstall the specified app name
+########################################
+uninstall_app() {
+    local input="$1"
+
+    # Ensure we have a .app extension
+    if [[ ! "$input" =~ \.app$ ]]; then
+        input="${input}.app"
+    fi
+
+    ########################################
+    # 1) Spotlight exact-match search
+    ########################################
+    local app_paths
+    app_paths=$(mdfind "kMDItemKind == 'Application' && kMDItemDisplayName == '$input'")
+
+    # 2) If nothing found, attempt partial-match on the base name (e.g. "Element")
+    if [ -z "$app_paths" ]; then
+        app_paths=$(mdfind "kMDItemKind == 'Application' && kMDItemDisplayName == '*${input%.*}*'")
+    fi
+
+    # 3) If still empty, bail out
+    if [ -z "$app_paths" ]; then
+        echo "Application not found. Please check the name and try again."
+        return 1
+    fi
+
+    ########################################
+    # Filter results to prefer /Applications
+    ########################################
+    # Turn multi-line results into an array
+    IFS=$'\n' read -rd '' -a all_matches <<< "$app_paths"
+
+    # We'll pick the match in /Applications if it exists.
+    local chosen=""
+    for path in "${all_matches[@]}"; do
+        if [[ "$path" == "/Applications/"* ]]; then
+            chosen="$path"
+            break
+        fi
+    done
+
+    # If no match was in /Applications, just pick the first one
+    if [ -z "$chosen" ]; then
+        chosen="${all_matches[0]}"
+    fi
+
+    # Show which one we're uninstalling
+    echo "Uninstalling: $chosen"
+
+    ########################################
+    # Move the .app bundle to Trash
+    ########################################
+    move_to_trash "$chosen" 
+    echo "Moved $chosen to Trash."
+
+    ########################################
+    # Find bundle identifier for deeper cleanup
+    ########################################
+    local app_identifier
+    app_identifier=$(mdls -name kMDItemCFBundleIdentifier -r "$chosen")
+
+    echo "Removing related files..."
+
+    if [ -n "$app_identifier" ]; then
+        # Remove anything matching the bundle identifier
+        find /Library/Application\ Support \
+             /Library/Caches \
+             /Library/Preferences \
+             ~/Library/Application\ Support \
+             ~/Library/Caches \
+             ~/Library/Preferences \
+             -name "*$app_identifier*" -maxdepth 1 -print0 2>/dev/null \
+        | while IFS= read -r -d '' file; do
+            move_to_trash "$file"
+        done
+    else
+        # Fall back to removing by the app's base name
+        local base_name="${input%.app}"
+        find /Library/Application\ Support \
+             /Library/Caches \
+             /Library/Preferences \
+             ~/Library/Application\ Support \
+             ~/Library/Caches \
+             ~/Library/Preferences \
+             -name "*$base_name*" -maxdepth 1 -print0 2>/dev/null \
+        | while IFS= read -r -d '' file; do
+            move_to_trash "$file"
+        done
+    fi
+
+    echo "Uninstallation complete."
+}
+
+uninstall_app "$1"

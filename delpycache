@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# Default directories to search
+directories=("~/sync" "~/workshop")
+
+# Check if a command line argument is provided
+if [ $# -gt 0 ]; then
+  if [ "$1" == "." ]; then
+    # Use the current directory
+    directories=(".")
+  else
+    # Use the provided directory
+    directories=("$1")
+  fi
+fi
+
+# Iterate through each directory
+for dir in "${directories[@]}"; do
+  # Expand tilde to home directory
+  expanded_dir=$(eval echo "$dir")
+
+  # Find and delete __pycache__ directories
+  find "$expanded_dir" -type d -name "__pycache__" -exec rm -rf {} +
+done
+
+echo "Deletion of __pycache__ folders completed."
+

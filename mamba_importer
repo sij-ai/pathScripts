@@ -1,0 +1,26 @@
+#!/bin/bash
+
+# Function to process a single .yml file
+process_file() {
+    file="$1"
+    if [[ -f "$file" ]]; then
+        env_name=$(echo "$file" | sed 's/.yml$//')
+        echo "Creating environment from $file..."
+        conda env create -f "$file" || echo "Failed to create environment from $file"
+    else
+        echo "File $file does not exist."
+    fi
+}
+
+# Check if a .yml file was provided as an argument
+if [[ $# -eq 1 && $1 == *.yml ]]; then
+    # Process the provided .yml file
+    process_file "$1"
+else
+    # No argument provided, process all .yml files in the current directory
+    for file in *.yml; do
+        process_file "$file"
+    done
+    echo "Environment creation process completed."
+fi
+

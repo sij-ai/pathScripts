@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Pull the latest version of every locally installed model:
+
+ollama ls | tail -n +2 | awk '{print $1}' | while read MODEL; do
+  echo "Pulling latest for $MODEL..."
+  ollama pull "$MODEL"
+done
+

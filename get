@@ -1,0 +1,51 @@
+#!/bin/bash
+
+# Check if a URL is provided
+if [ $# -eq 0 ]; then
+    echo "Please provide a git repository URL."
+    exit 1
+fi
+
+# Extract the repository URL and name
+repo_url=$1
+repo_name=$(basename "$repo_url" .git)
+
+# Clone the repository
+git clone "$repo_url"
+
+# Check if the clone was successful
+if [ $? -ne 0 ]; then
+    echo "Failed to clone the repository."
+    exit 1
+fi
+
+# Change to the newly created directory
+cd "$repo_name" || exit
+
+# Check for setup.py or requirements.txt
+if [ -f "setup.py" ] || [ -f "requirements.txt" ]; then
+    # Create a new Mamba environment
+    mamba create -n "$repo_name" python -y
+
+    # Activate the new environment
+    eval "$(conda shell.bash hook)"
+    mamba activate "$repo_name"
+
+    # Install dependencies
+    if [ -f "setup.py" ]; then
+        echo "Installing from setup.py..."
+        python setup.py install
+    fi
+
+    if [ -f "requirements.txt" ]; then
+        echo "Installing from requirements.txt..."
+        pip install -r requirements.txt
+    fi
+
+    echo "Environment setup complete."
+else
+    echo "No setup.py or requirements.txt found. Skipping environment setup."
+fi
+
+echo "Repository cloned and set up successfully."
+

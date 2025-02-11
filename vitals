@@ -1,0 +1,130 @@
+#!/bin/bash
+
+# Create a DNS rewrite rule in AdGuard home that assigns 'check.adguard.test'
+# to an IP address beginning '100.', such as the Tailscale IP of your server.
+# Alternatively, you can change the adguard_test_domain to whatever you like,
+# so long as it matches the domain of a DNS rewrite rule you created in AGH.
+
+adguard_test_domain='check.adguard.test'
+
+if [[ "$(uname)" == "Darwin" ]]; then
+    # macOS
+    local_ip=$(ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -n1)
+    uptime_seconds=$(sysctl -n kern.boottime | awk '{print $4}' | sed 's/,//')
+    current_time=$(date +%s)
+    uptime_seconds=$((current_time - uptime_seconds))
+    days=$((uptime_seconds / 86400))
+    hours=$(( (uptime_seconds % 86400) / 3600 ))
+    minutes=$(( (uptime_seconds % 3600) / 60 ))
+    uptime="up "
+    [[ $days -gt 0 ]] && uptime+="$days days, "
+    [[ $hours -gt 0 ]] && uptime+="$hours hours, "
+    uptime+="$minutes minutes"
+else
+    # Linux
+    local_ip=$(hostname -I | awk '{print $1}')
+    uptime=$(uptime -p)
+fi
+
+wan_info=$(curl -s --max-time 10 https://am.i.mullvad.net/json)
+wan_connected=false
+if [ ! -z "$wan_info" ]; then
+  wan_connected=true
+  wan_ip=$(echo "$wan_info" | jq -r '.ip')
+  mullvad_exit_ip=$(echo "$wan_info" | jq '.mullvad_exit_ip')
+  blacklisted=$(echo "$wan_info" | jq '.blacklisted.blacklisted')
+else
+  wan_ip="Unavailable"
+  mullvad_exit_ip=false
+  blacklisted=false
+fi
+
+# Check if Tailscale is installed and get IP
+if command -v tailscale &> /dev/null; then
+  has_tailscale=true
+  tailscale_ip=$(tailscale ip -4)
+  # Get Tailscale exit-node information
+  ts_exitnode_output=$(tailscale exit-node list)
+  # Parse exit node hostname
+  if echo "$ts_exitnode_output" | grep -q 'selected'; then
+    mullvad_exitnode=true
+    # Extract the hostname of the selected exit node, taking only the part before any newline
+    mullvad_hostname=$(echo "$ts_exitnode_output" | grep 'selected' | awk '{print $2}' | awk -F'\n' '{print $1}')
+  else
+    mullvad_exitnode=false
+    mullvad_hostname=""
+  fi
+else
+  has_tailscale=false
+  tailscale_ip="Not installed"
+  mullvad_exitnode=false
+  mullvad_hostname=""
+fi
+
+nextdns_info=$(curl -sL --max-time 10 https://test.nextdns.io)
+if [ -z "$nextdns_info" ]; then
+  echo "Failed to fetch NextDNS status or no internet connection." >&2
+  nextdns_connected=false
+  nextdns_protocol=""
+  nextdns_client=""
+else
+  nextdns_status=$(echo "$nextdns_info" | jq -r '.status')
+  if [ "$nextdns_status" = "ok" ]; then
+    nextdns_connected=true
+    nextdns_protocol=$(echo "$nextdns_info" | jq -r '.protocol')
+    nextdns_client=$(echo "$nextdns_info" | jq -r '.clientName')
+  else
+    nextdns_connected=false
+    nextdns_protocol=""
+    nextdns_client=""
+  fi
+fi
+
+# Check AdGuard Home DNS
+resolved_ip=$(dig +short $adguard_test_domain)
+if [[ $resolved_ip =~ ^100\. ]]; then
+  adguard_connected=true
+  adguard_protocol="AdGuard Home"
+  adguard_client="$resolved_ip"
+else
+  adguard_connected=false
+  adguard_protocol=""
+  adguard_client=""
+fi
+
+# Output JSON using jq for proper formatting and escaping
+jq -n \
+--arg local_ip "$local_ip" \
+--argjson wan_connected "$wan_connected" \
+--arg wan_ip "$wan_ip" \
+--argjson has_tailscale "$has_tailscale" \
+--arg tailscale_ip "$tailscale_ip" \
+--argjson mullvad_exitnode "$mullvad_exitnode" \
+--arg mullvad_hostname "$mullvad_hostname" \
+--argjson mullvad_exit_ip "$mullvad_exit_ip" \
+--argjson blacklisted "$blacklisted" \
+--argjson nextdns_connected "$nextdns_connected" \
+--arg nextdns_protocol "$nextdns_protocol" \
+--arg nextdns_client "$nextdns_client" \
+--argjson adguard_connected "$adguard_connected" \
+--arg adguard_protocol "$adguard_protocol" \
+--arg adguard_client "$adguard_client" \
+--arg uptime "$uptime" \
+'{
+  local_ip: $local_ip,
+  wan_connected: $wan_connected,
+  wan_ip: $wan_ip,
+  has_tailscale: $has_tailscale,
+  tailscale_ip: $tailscale_ip,
+  mullvad_exitnode: $mullvad_exitnode,
+  mullvad_hostname: $mullvad_hostname,
+  mullvad_exit_ip: $mullvad_exit_ip,
+  blacklisted: $blacklisted,
+  nextdns_connected: $nextdns_connected,
+  nextdns_protocol: $nextdns_protocol,
+  nextdns_client: $nextdns_client,
+  adguard_connected: $adguard_connected,
+  adguard_protocol: $adguard_protocol,
+  adguard_client: $adguard_client,
+  uptime: $uptime
+}'

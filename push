@@ -1,0 +1,87 @@
+#!/bin/bash
+
+# Path to the file containing the list of repositories
+REPOS_FILE="$HOME/.repos.txt"
+
+# Check if the repos file exists
+if [ ! -f "$REPOS_FILE" ]; then
+    echo "Error: $REPOS_FILE does not exist."
+    exit 1
+fi
+
+# Read the repos file and process each directory
+while IFS= read -r repo_path || [[ -n "$repo_path" ]]; do
+    # Trim whitespace
+    repo_path=$(echo "$repo_path" | xargs)
+
+    # Skip empty lines and lines starting with #
+    [[ -z "$repo_path" || "$repo_path" == \#* ]] && continue
+
+    # Expand tilde to home directory
+    repo_path="${repo_path/#\~/$HOME}"
+
+    # Check if the directory exists
+    if [ ! -d "$repo_path" ]; then
+        echo "Warning: Directory $repo_path does not exist. Skipping."
+        continue
+    fi
+
+    echo "Processing repository: $repo_path"
+
+    # Navigate to the project directory
+    cd "$repo_path" || { echo "Error: Unable to change to directory $repo_path"; continue; }
+
+    # Check if it's a git repository
+    if [ ! -d .git ]; then
+        echo "Warning: $repo_path is not a git repository. Skipping."
+        continue
+    fi
+
+    # Check if 'origin' remote exists
+    if ! git remote | grep -q '^origin$'; then
+        echo "Remote 'origin' not found. Attempting to set it up..."
+        # Try to guess the remote URL based on the directory name
+        repo_name=$(basename "$repo_path")
+        remote_url="https://git.sij.ai/sij/$repo_name.git"
+        git remote add origin "$remote_url"
+        echo "Added remote 'origin' with URL: $remote_url"
+    fi
+
+    # Get the current branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+    # Pull the latest changes from the repository
+    echo "Pulling from $current_branch branch..."
+    if ! git pull origin "$current_branch"; then
+        echo "Failed to pull from origin. The remote branch might not exist or there might be conflicts."
+        echo "Skipping further operations for this repository."
+        continue
+    fi
+
+    # Add changes to the Git index (staging area)
+    echo "Adding all changes..."
+    git add .
+
+    # Check if there are changes to commit
+    if git diff-index --quiet HEAD --; then
+        echo "No changes to commit."
+    else
+        # Commit changes
+        echo "Committing changes..."
+        git commit -m "Auto-update: $(date)"
+
+        # Push changes to the remote repository
+        echo "Pushing all changes..."
+        if ! git push origin "$current_branch"; then
+            echo "Failed to push changes. The remote branch might not exist."
+            echo "Creating remote branch and pushing..."
+            git push -u origin "$current_branch"
+        fi
+    fi
+
+    echo "Update complete for $repo_path!"
+    echo "----------------------------------------"
+done < "$REPOS_FILE"
+
+echo "All repositories processed."
+
