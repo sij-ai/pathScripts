@@ -1,2 +1,0 @@
-#!/bin/bash
-whois $(curl -s https://am.i.mullvad.net/ip)
