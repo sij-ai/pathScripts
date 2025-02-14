@@ -9,6 +9,7 @@ from datetime import datetime
 import math
 from typing import Optional
 import textwrap
+import re
 
 async def fetch_and_parse_article(url: str):
     # Try trafilatura first
@@ -22,16 +23,21 @@ async def fetch_and_parse_article(url: str):
             article.set_html(source)
             article.parse()
             
-            # Update article properties with trafilatura data
+            # Extract text with trafilatura but without markdown to avoid its line breaking
+            raw_text = trafilatura.extract(source, output_format="text", include_comments=False)
+            if raw_text:
+                article.text = raw_text
+            
+            # Update other article properties with trafilatura data
             article.title = article.title or traf.title or url
             article.authors = article.authors or (traf.author if isinstance(traf.author, list) else [traf.author])
             article.publish_date = traf.date or datetime.now()
-            article.text = trafilatura.extract(source, output_format="markdown", include_comments=False) or article.text
             article.top_image = article.top_image or traf.image
             article.source_url = traf.sitename or urlparse(url).netloc.replace('www.', '').title()
             
             return article
-        except Exception:
+        except Exception as e:
+            print(f"Trafilatura extraction failed: {str(e)}", file=sys.stderr)
             pass
     
     # Fallback to newspaper3k
@@ -53,6 +59,15 @@ async def fetch_and_parse_article(url: str):
     except Exception as e:
         raise Exception(f"Failed to parse article from {url}: {str(e)}")
 
+def clean_text(text: str) -> str:
+    # Convert paragraph breaks to a special marker
+    text = re.sub(r'\n\s*\n', '¶¶', text)
+    # Convert all other whitespace (including single newlines) to single spaces
+    text = re.sub(r'\s+', ' ', text)
+    # Convert markers back to double newlines
+    text = text.replace('¶¶', '\n\n')
+    return text.strip()
+
 def format_article_markdown(article) -> str:
     # Format title
     output = f"# {article.title}\n\n"
@@ -69,17 +84,13 @@ def format_article_markdown(article) -> str:
     if article.top_image:
         output += f"![Article Image]({article.top_image})\n\n"
     
-    # Format article text with proper wrapping
+    # Format article text with improved paragraph handling
     if article.text:
-        paragraphs = article.text.split('\n')
-        wrapped_paragraphs = []
+        # Clean and normalize the text first
+        clean_content = clean_text(article.text)
         
-        for paragraph in paragraphs:
-            if paragraph.strip():
-                wrapped = textwrap.fill(paragraph.strip(), width=80)
-                wrapped_paragraphs.append(wrapped)
-        
-        output += '\n\n'.join(wrapped_paragraphs)
+        # Just split on double newlines and don't use textwrap
+        output += clean_content
     
     return output
 
