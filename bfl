@@ -1,0 +1,66 @@
+#!/bin/bash
+
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 \"prompt\""
+    exit 1
+fi
+
+# Get script directory and load .env file
+SCRIPT_DIR=$(dirname "$(readlink -f "$0")")
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    source "$SCRIPT_DIR/.env"
+else
+    echo "Error: .env file not found in script directory"
+    exit 1
+fi
+
+# Check if BFL_API_KEY is set
+if [ -z "$BFL_API_KEY" ]; then
+    echo "Error: BFL_API_KEY not found in .env file"
+    exit 1
+fi
+
+# Escape the prompt for JSON
+PROMPT=$(echo "$1" | jq -R -s '.')
+
+# Make the initial request
+request=$(curl -X 'POST' \
+  'https://api.us1.bfl.ai/v1/flux-pro-1.1' \
+  -H 'accept: application/json' \
+  -H "x-key: ${BFL_API_KEY}" \
+  -H 'Content-Type: application/json' \
+  -d "{
+  \"prompt\": ${PROMPT},
+  \"width\": 1024,
+  \"height\": 768
+}")
+
+echo "Initial request: $request"
+request_id=$(jq -r .id <<< "$request")
+
+# Poll for results
+while true
+do
+  sleep 0.5
+  result=$(curl -s -X 'GET' \
+    "https://api.us1.bfl.ai/v1/get_result?id=${request_id}" \
+    -H 'accept: application/json' \
+    -H "x-key: ${BFL_API_KEY}")
+  
+  status=$(jq -r .status <<< "$result")
+  echo "Status: $status"
+  
+  if [ "$status" == "Ready" ]; then
+    image_url=$(jq -r .result.sample <<< "$result")
+    echo "Image URL: $image_url"
+    
+    # Generate random filename
+    random_name=$(openssl rand -hex 8)
+    filename="${random_name}.jpg"
+    
+    # Download the image
+    curl -s -L "$image_url" -o "$filename"
+    echo "Image saved as: $filename"
+    break
+  fi
+done
