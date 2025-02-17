@@ -25,7 +25,7 @@ PROMPT=$(echo "$1" | jq -R -s '.')
 
 # Make the initial request
 request=$(curl -X 'POST' \
-  'https://api.us1.bfl.ai/v1/flux-pro-1.1' \
+  'https://api.us1.bfl.ai/v1/flux-dev' \
   -H 'accept: application/json' \
   -H "x-key: ${BFL_API_KEY}" \
   -H 'Content-Type: application/json' \
