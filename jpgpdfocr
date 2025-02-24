@@ -1,7 +1,32 @@
 #!/usr/bin/env python3
-import io
+"""
+jpgpdfocr - Convert JPG images to a searchable PDF using OCR.
+
+This script processes a directory of JPG images, runs OCR (Optical Character Recognition) 
+on each image using Tesseract, and merges them into a single searchable PDF.
+
+Usage:
+    ./jpgpdfocr --input <directory> [--output <file>] [--lang <language>] 
+                [--threads <num>] [--quiet]
+
+Arguments:
+    --input, -i    Directory containing JPG files (required).
+    --output, -o   Output PDF filename (default: <input_folder>_searchable.pdf).
+    --lang, -l     OCR language (default: 'eng').
+    --threads, -t  Number of threads for OCR (default: auto-detect CPU cores).
+    --quiet, -q    Suppress output messages.
+
+Dependencies:
+    - Python 3
+    - PIL (Pillow)
+    - pytesseract (Tesseract OCR)
+    - PyPDF2
+    - concurrent.futures (built-in)
+"""
+
 import os
 import argparse
+import io
 from PIL import Image
 import pytesseract
 import concurrent.futures
