@@ -23,6 +23,7 @@ PRIVACY_FRIENDLY_COUNTRIES = [
 TAILSCALE_ARGS = [
     '--exit-node-allow-lan-access',
     '--accept-dns',
+    '--accept-routes'
 ]
 
 def get_mullvad_info():
