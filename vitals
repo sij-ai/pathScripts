@@ -61,25 +61,6 @@ else
   mullvad_hostname=""
 fi
 
-nextdns_info=$(curl -sL --max-time 10 https://test.nextdns.io)
-if [ -z "$nextdns_info" ]; then
-  echo "Failed to fetch NextDNS status or no internet connection." >&2
-  nextdns_connected=false
-  nextdns_protocol=""
-  nextdns_client=""
-else
-  nextdns_status=$(echo "$nextdns_info" | jq -r '.status')
-  if [ "$nextdns_status" = "ok" ]; then
-    nextdns_connected=true
-    nextdns_protocol=$(echo "$nextdns_info" | jq -r '.protocol')
-    nextdns_client=$(echo "$nextdns_info" | jq -r '.clientName')
-  else
-    nextdns_connected=false
-    nextdns_protocol=""
-    nextdns_client=""
-  fi
-fi
-
 # Check AdGuard Home DNS
 resolved_ip=$(dig +short $adguard_test_domain)
 if [[ $resolved_ip =~ ^100\. ]]; then
@@ -103,9 +84,6 @@ jq -n \
 --arg mullvad_hostname "$mullvad_hostname" \
 --argjson mullvad_exit_ip "$mullvad_exit_ip" \
 --argjson blacklisted "$blacklisted" \
---argjson nextdns_connected "$nextdns_connected" \
---arg nextdns_protocol "$nextdns_protocol" \
---arg nextdns_client "$nextdns_client" \
 --argjson adguard_connected "$adguard_connected" \
 --arg adguard_protocol "$adguard_protocol" \
 --arg adguard_client "$adguard_client" \
@@ -120,9 +98,6 @@ jq -n \
   mullvad_hostname: $mullvad_hostname,
   mullvad_exit_ip: $mullvad_exit_ip,
   blacklisted: $blacklisted,
-  nextdns_connected: $nextdns_connected,
-  nextdns_protocol: $nextdns_protocol,
-  nextdns_client: $nextdns_client,
   adguard_connected: $adguard_connected,
   adguard_protocol: $adguard_protocol,
   adguard_client: $adguard_client,
