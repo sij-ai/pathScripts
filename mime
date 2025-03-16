@@ -17,6 +17,9 @@ get_extension() {
     image/gif)
       echo "gif"
       ;;
+    image/webp)
+      echo "webp"
+      ;;
     video/mp4)
       echo "mp4"
       ;;
