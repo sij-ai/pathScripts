@@ -1,0 +1,80 @@
+#!/bin/bash
+# This script processes all files in the current folder:
+# 1. Removes leading '-' characters from filenames.
+# 2. Uses the file command to determine the MIME type.
+# 3. Renames the file to add the correct file extension.
+
+# Function to map MIME type to a file extension
+get_extension() {
+  local mimetype="$1"
+  case "$mimetype" in
+    image/jpeg)
+      echo "jpg"
+      ;;
+    image/png)
+      echo "png"
+      ;;
+    image/gif)
+      echo "gif"
+      ;;
+    video/mp4)
+      echo "mp4"
+      ;;
+    video/x-matroska)
+      echo "mkv"
+      ;;
+    application/pdf)
+      echo "pdf"
+      ;;
+    text/plain)
+      echo "txt"
+      ;;
+    *)
+      echo ""
+      ;;
+  esac
+}
+
+# Iterate over files in current directory
+for file in *; do
+  # Skip if not a regular file
+  if [ ! -f "$file" ]; then
+    continue
+  fi
+
+  # Remove any leading dashes from the filename
+  newname=$(echo "$file" | sed 's/^-*//')
+  if [ "$newname" != "$file" ]; then
+    if [ -e "$newname" ]; then
+      echo "File $newname already exists. Skipping rename of $file."
+      file="$newname"  # continue processing the original file
+    else
+      mv -- "$file" "$newname"
+      echo "Renamed $file to $newname"
+      file="$newname"
+    fi
+  fi
+
+  # Determine the MIME type; use '--' to avoid interpreting filenames as options
+  mimetype=$(file --mime-type -b -- "$file")
+  ext=$(get_extension "$mimetype")
+  if [ -z "$ext" ]; then
+    echo "Unknown MIME type for $file: $mimetype. Skipping extension addition."
+    continue
+  fi
+
+  # If the file doesn't already end with the correct extension, rename it
+  if [[ "$file" != *.$ext ]]; then
+    newfile="${file}.${ext}"
+    # If newfile already exists, avoid overwriting
+    if [ -e "$newfile" ]; then
+      echo "Target file $newfile already exists. Skipping renaming of $file."
+      continue
+    fi
+    mv -- "$file" "$newfile"
+    echo "Renamed $file to $newfile (MIME type: $mimetype)"
+  else
+    echo "$file already has the correct extension ($ext)"
+  fi
+done
+
