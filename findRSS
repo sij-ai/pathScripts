@@ -1,0 +1,134 @@
+#!/usr/bin/env python3
+
+"""
+Usage:
+  findRSS <start_url> --max_depth <depth>
+
+Example:
+  findRSS https://example.com --max_depth 2
+"""
+
+import argparse
+import requests
+from urllib.parse import urljoin, urlparse
+from bs4 import BeautifulSoup
+from collections import deque
+
+def find_feeds_on_page(url):
+    """
+    Scan a single webpage for RSS/Atom link tags.
+    Returns a set of discovered feed URLs.
+    """
+    feeds = set()
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+    except (requests.RequestException, ValueError) as e:
+        print(f"Failed to fetch {url}: {e}")
+        return feeds
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    # Search for <link> tags with known feed types
+    for link_tag in soup.find_all("link"):
+        link_type = link_tag.get("type", "")
+        # rel can be None, string, or a list of strings
+        rel_attrs = link_tag.get("rel", [])
+
+        # Convert rel attributes to a single string for "feed" checks
+        if isinstance(rel_attrs, list):
+            rel_text = " ".join(rel_attrs).lower()
+        else:
+            rel_text = str(rel_attrs).lower()
+
+        href = link_tag.get("href")
+
+        if href and (
+            "rss" in link_type.lower()
+            or "atom" in link_type.lower()
+            or "feed" in rel_text
+        ):
+            feed_url = urljoin(url, href)
+            feeds.add(feed_url)
+
+    return feeds
+
+def find_links_on_page(url, base_domain):
+    """
+    Find all URLs under the same domain from a webpage.
+    Returns a set of discovered links.
+    """
+    links = set()
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+    except (requests.RequestException, ValueError) as e:
+        # If there's an error getting the page, return an empty set
+        return links
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    # Search for <a> tags
+    for a_tag in soup.find_all("a", href=True):
+        link = a_tag["href"]
+        full_link = urljoin(url, link)
+        # Only add links that are within the same domain
+        if urlparse(full_link).netloc == base_domain:
+            links.add(full_link)
+
+    return links
+
+def crawl_for_feeds(start_url, max_depth):
+    """
+    Crawl the given site up to `max_depth` pages deep, collecting RSS/Atom feeds.
+    """
+    base_domain = urlparse(start_url).netloc
+
+    # Each item in the queue is a tuple: (url, depth)
+    queue = deque([(start_url, 0)])
+    visited = set([start_url])
+    feeds_found = set()
+
+    while queue:
+        current_url, depth = queue.popleft()
+
+        # Find feeds on the current page
+        page_feeds = find_feeds_on_page(current_url)
+        feeds_found.update(page_feeds)
+
+        # If we haven't reached the max depth, gather more pages
+        if depth < max_depth:
+            links = find_links_on_page(current_url, base_domain)
+            for link in links:
+                if link not in visited:
+                    visited.add(link)
+                    queue.append((link, depth + 1))
+
+    return feeds_found
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Crawl a website for RSS/Atom feeds up to a given depth."
+    )
+    parser.add_argument("start_url", help="The starting URL to begin crawling.")
+    parser.add_argument(
+        "--max_depth",
+        type=int,
+        default=1,
+        help="How many pages deep to crawl from the original page (default is 1)."
+    )
+    args = parser.parse_args()
+
+    feeds = crawl_for_feeds(args.start_url, args.max_depth)
+    if feeds:
+        print("Found the following feeds:")
+        for feed in feeds:
+            print(f"  - {feed}")
+    else:
+        print("No feeds found.")
+
+if __name__ == "__main__":
+    main()
+

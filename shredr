@@ -1,0 +1,80 @@
+#!/bin/bash
+
+# -------------------------------------------------
+# secure_delete.sh
+# Description:
+#   This script securely deletes a file or all files within a directory.
+#   Usage:
+#     ./secure_delete.sh /path/to/file_or_directory
+# -------------------------------------------------
+
+# Function to display usage information
+usage() {
+    echo "Usage: $0 /path/to/file_or_directory"
+    exit 1
+}
+
+# Check if exactly one argument is provided
+if [ "$#" -ne 1 ]; then
+    echo "Error: Exactly one path must be provided."
+    usage
+fi
+
+TARGET_PATH="$1"
+
+# Check if the path exists
+if [ ! -e "$TARGET_PATH" ]; then
+    echo "Error: The path '$TARGET_PATH' does not exist."
+    exit 1
+fi
+
+# Function to shred a single file with specified options
+shred_file() {
+    local file="$1"
+    echo "Shredding file: $file"
+    shred -f -v -z -n 9 "$file"
+    
+    if [ $? -eq 0 ]; then
+        echo "Successfully shredded: $file"
+    else
+        echo "Failed to shred: $file" >&2
+    fi
+}
+
+# Determine if the path is a file or directory
+if [ -f "$TARGET_PATH" ]; then
+    # It's a regular file
+    shred_file "$TARGET_PATH"
+
+elif [ -d "$TARGET_PATH" ]; then
+    # It's a directory
+    echo "Detected directory: $TARGET_PATH"
+    echo "Shredding all files within the directory..."
+
+    # Find and shred all regular files within the directory
+    find "$TARGET_PATH" -type f -print0 | while IFS= read -r -d '' file; do
+        shred_file "$file"
+    done
+
+    echo "All files within '$TARGET_PATH' have been shredded."
+
+    # Remove the now-empty directory structure
+    echo "Removing directory: $TARGET_PATH"
+    rm -rf "$TARGET_PATH"
+    
+    if [ $? -eq 0 ]; then
+        echo "Directory '$TARGET_PATH' has been removed."
+    else
+        echo "Failed to remove directory: $TARGET_PATH" >&2
+    fi
+
+else
+    # Neither a regular file nor a directory
+    echo "Error: The path '$TARGET_PATH' is neither a regular file nor a directory."
+    exit 1
+fi
+
+echo "Secure deletion completed successfully."
+
+exit 0
+

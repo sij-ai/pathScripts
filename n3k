@@ -3,17 +3,33 @@
 import sys
 import asyncio
 import trafilatura
+import requests
 from newspaper import Article
 from urllib.parse import urlparse
 from datetime import datetime
-import math
 from typing import Optional
-import textwrap
 import re
 
+def fetch_url_with_headers(url: str) -> Optional[str]:
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                      'AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/115.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Referer': 'https://www.google.com/'
+    }
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        return response.text
+    except Exception as e:
+        print(f"Error fetching URL with headers: {str(e)}", file=sys.stderr)
+    return None
+
 async def fetch_and_parse_article(url: str):
-    # Try trafilatura first
-    source = trafilatura.fetch_url(url)
+    # First try using trafilatura with custom headers
+    source = fetch_url_with_headers(url)
     
     if source:
         try:
@@ -23,12 +39,12 @@ async def fetch_and_parse_article(url: str):
             article.set_html(source)
             article.parse()
             
-            # Extract text with trafilatura but without markdown to avoid its line breaking
+            # Extract text with trafilatura without markdown to avoid its line breaking
             raw_text = trafilatura.extract(source, output_format="text", include_comments=False)
             if raw_text:
                 article.text = raw_text
             
-            # Update other article properties with trafilatura data
+            # Update article properties using trafilatura data
             article.title = article.title or traf.title or url
             article.authors = article.authors or (traf.author if isinstance(traf.author, list) else [traf.author])
             article.publish_date = traf.date or datetime.now()
@@ -38,13 +54,16 @@ async def fetch_and_parse_article(url: str):
             return article
         except Exception as e:
             print(f"Trafilatura extraction failed: {str(e)}", file=sys.stderr)
-            pass
     
-    # Fallback to newspaper3k
+    # Fallback to newspaper3k with headers
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                          'AppleWebKit/537.36 (KHTML, like Gecko) '
+                          'Chrome/115.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://www.google.com/'
         }
         
         article = Article(url)
@@ -86,10 +105,7 @@ def format_article_markdown(article) -> str:
     
     # Format article text with improved paragraph handling
     if article.text:
-        # Clean and normalize the text first
         clean_content = clean_text(article.text)
-        
-        # Just split on double newlines and don't use textwrap
         output += clean_content
     
     return output
@@ -110,3 +126,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
