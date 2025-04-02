@@ -1,0 +1,50 @@
+#!/bin/bash
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# A more conservative maintenance script for macOS
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+# 1) Run built-in periodic maintenance scripts
+# (daily, weekly, monthly)
+echo "Running periodic scripts..."
+sudo periodic daily weekly monthly
+
+# 2) Partially clear user caches (only from specific common apps or directories)
+# Caution: Remove or modify app-specific lines if you want to keep certain cache data.
+echo "Clearing selected user caches..."
+CACHE_PATHS=(
+  "~/Library/Caches/com.apple Safari"
+  "~/Library/Caches/Google/Chrome"
+  "~/Library/Caches/Firefox"
+# Add additional known safe cache paths below if desired
+)
+
+for path in "${CACHE_PATHS[@]}"; do
+  resolved_path="${path/#\~/$HOME}"
+  if [ -d "$resolved_path" ]; then
+    echo "Removing $resolved_path"
+    sudo rm -rf "$resolved_path"
+  fi
+done
+
+# 3) (Optional) Remove old iOS backups if older than a certain number of days
+# Adjust the DAYS variable to your preference
+DAYS=60
+BACKUP_DIR="$HOME/Library/Application Support/MobileSync/Backup"
+if [ -d "$BACKUP_DIR" ]; then
+  echo "Removing iOS backups older than $DAYS days..."
+  find "$BACKUP_DIR" -type d -mtime +$DAYS -exec echo "Removing {}" \; -exec sudo rm -rf {} \;
+fi
+
+# 4) Clear user Trash (warning: data cannot be restored after this)
+echo "Emptying Trash..."
+[ -d "$HOME/.Trash" ] && sudo rm -rf "$HOME/.Trash/"*
+
+# 5) Perform a mild Time Machine snapshot thinning
+# The "thinlocalsnapshots" command removes old local snapshots if space is needed
+# This one tries to free up to 50GB in steps of 1GB if required
+echo "Thinning Time Machine local snapshots if needed..."
+sudo tmutil thinlocalsnapshots / 50000000000 1
+
+echo "Conservative maintenance script completed."
+
