@@ -5,13 +5,7 @@ directories=("~/sync" "~/workshop")
 
 # Check if a command line argument is provided
 if [ $# -gt 0 ]; then
-  if [ "$1" == "." ]; then
-    # Use the current directory
-    directories=(".")
-  else
-    # Use the provided directory
-    directories=("$1")
-  fi
+  directories=("$1")
 fi
 
 # Iterate through each directory

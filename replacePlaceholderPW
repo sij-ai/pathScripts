@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+
+import argparse
+import string
+import secrets
+import sys
+import os
+
+def generate_password(length):
+  """Generates a cryptographically secure random password."""
+  alphabet = string.ascii_letters + string.digits
+  password = ''.join(secrets.choice(alphabet) for _ in range(length))
+  return password
+
+def main():
+  parser = argparse.ArgumentParser(
+      description="Replace placeholder strings in a file with randomly generated passwords."
+  )
+  parser.add_argument(
+      "-i", "--input",
+      required=True,
+      help="Path to the input file."
+  )
+  parser.add_argument(
+      "-p", "--placeholder",
+      default="yourStrongPasswordHere",
+      help="The placeholder string to replace (default: 'yourStrongPasswordHere')."
+  )
+  parser.add_argument(
+      "-l", "--length",
+      type=int,
+      default=16,
+      help="Length of the generated passwords (default: 16)."
+  )
+
+  output_group = parser.add_mutually_exclusive_group(required=True)
+  output_group.add_argument(
+      "-r", "--replace",
+      action="store_true",
+      help="Replace the input file in place."
+  )
+  output_group.add_argument(
+      "-o", "--output",
+      help="Path to the output file (alternative to --replace)."
+  )
+
+  args = parser.parse_args()
+
+  # Validate input file existence
+  if not os.path.isfile(args.input):
+      print(f"Error: Input file not found: {args.input}", file=sys.stderr)
+      sys.exit(1)
+
+  # Validate password length
+  if args.length <= 0:
+       print(f"Error: Password length must be positive.", file=sys.stderr)
+       sys.exit(1)
+
+  try:
+    # Read the input file
+    print(f"Reading input file: {args.input}")
+    with open(args.input, 'r') as f:
+      content = f.read()
+
+    # Count occurrences
+    placeholder_count = content.count(args.placeholder)
+    if placeholder_count == 0:
+      print(f"Placeholder '{args.placeholder}' not found in the file. No changes made.")
+      sys.exit(0)
+
+    print(f"Found {placeholder_count} instance(s) of placeholder '{args.placeholder}'.")
+
+    # Generate passwords and replace
+    modified_content = content
+    generated_passwords = [] # Keep track if needed, not used currently
+    for _ in range(placeholder_count):
+        new_password = generate_password(args.length)
+        generated_passwords.append(new_password)
+        # Replace only the first occurrence in each iteration
+        modified_content = modified_content.replace(args.placeholder, new_password, 1)
+
+    # Determine output path
+    output_path = args.input if args.replace else args.output
+
+    # Write the modified content
+    print(f"Writing modified content to: {output_path}")
+    with open(output_path, 'w') as f:
+      f.write(modified_content)
+
+    print("Replacement complete.")
+
+  except FileNotFoundError:
+      print(f"Error: Input file not found: {args.input}", file=sys.stderr)
+      sys.exit(1)
+  except IOError as e:
+      print(f"Error reading or writing file: {e}", file=sys.stderr)
+      sys.exit(1)
+  except Exception as e:
+       print(f"An unexpected error occurred: {e}", file=sys.stderr)
+       sys.exit(1)
+
+
+if __name__ == "__main__":
+  main()
