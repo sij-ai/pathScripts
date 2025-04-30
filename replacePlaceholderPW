@@ -32,6 +32,11 @@ def main():
       default=16,
       help="Length of the generated passwords (default: 16)."
   )
+  parser.add_argument(
+      "-s", "--same",
+      action="store_true",
+      help="Use the same generated password for all placeholder instances."
+  )
 
   output_group = parser.add_mutually_exclusive_group(required=True)
   output_group.add_argument(
@@ -72,12 +77,19 @@ def main():
 
     # Generate passwords and replace
     modified_content = content
-    generated_passwords = [] # Keep track if needed, not used currently
-    for _ in range(placeholder_count):
+    generated_passwords = [] # Keep track if needed
+    if args.same:
+        # Generate one password and replace all instances
         new_password = generate_password(args.length)
         generated_passwords.append(new_password)
-        # Replace only the first occurrence in each iteration
-        modified_content = modified_content.replace(args.placeholder, new_password, 1)
+        modified_content = modified_content.replace(args.placeholder, new_password)
+    else:
+        # Generate a new password for each instance
+        for _ in range(placeholder_count):
+            new_password = generate_password(args.length)
+            generated_passwords.append(new_password)
+            # Replace only the first occurrence in each iteration
+            modified_content = modified_content.replace(args.placeholder, new_password, 1)
 
     # Determine output path
     output_path = args.input if args.replace else args.output
