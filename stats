@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Default values
+DURATION=10
+NUM_PROCS=10
+
+# Parse options
+while getopts "d:n:" opt; do
+  case $opt in
+    d) DURATION=$OPTARG ;;
+    n) NUM_PROCS=$OPTARG ;;
+    *) echo "Usage: $0 [-d duration] [-n num_procs]"; exit 1 ;;
+  esac
+done
+
+# Capture header (split-second)
+HEADER=$(pidstat -u 1 1 | grep "UID.*Command" | head -n 1)
+
+# Capture body (sorted by %CPU)
+BODY=$(pidstat -u "$DURATION" 1 | grep "Average" | sort -k8 -nr | head -n "$NUM_PROCS")
+
+# Output
+echo "$HEADER"
+echo "$BODY"
