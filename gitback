@@ -1,6 +1,12 @@
 #!/bin/bash
 
 # Script to roll back a git repository one commit at a time
+# No user interaction required, pager explicitly disabled
+
+# Explicitly disable git pager for this script's execution
+export GIT_PAGER=cat
+
+echo "gitback jojo"
 
 # Check if current directory is a git repository
 if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
@@ -11,52 +17,58 @@ fi
 # Function to display current commit information
 show_current_commit() {
     echo "Current commit:"
-    git log -1 --oneline
+    # Added --no-pager just in case, though GIT_PAGER=cat should handle it
+    COMMIT_INFO=$(git --no-pager log -1 --oneline 2>/dev/null)
+    if [ -z "$COMMIT_INFO" ]; then
+        echo "No commits found or at the beginning of history."
+    else
+        echo "$COMMIT_INFO"
+    fi
     echo "-------------------"
 }
 
 # Function to roll back one commit
 rollback_one_commit() {
     # Save current commit hash for reference
-    CURRENT_COMMIT=$(git rev-parse HEAD)
-    
-    # Check if we're at the initial commit
-    if [ "$(git rev-list --count HEAD)" -eq 1 ]; then
-        echo "Warning: This is the initial commit. Cannot roll back further."
+    CURRENT_COMMIT=$(git rev-parse HEAD 2>/dev/null)
+    if [ -z "$CURRENT_COMMIT" ]; then
+       echo "Error: Could not get current commit hash."
+       return 1
+    fi
+
+    # Check if we're at the initial commit or have no commits
+    COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+    if [ "$COMMIT_COUNT" -le 1 ]; then
+        echo "Warning: This is the initial commit or there are no commits. Cannot roll back further."
+        # Show commit status even if we can't roll back
+        show_current_commit
         return 1
     fi
-    
+
     # Attempt to roll back one commit
-    if git reset --hard HEAD~1; then
+    # Redirect stdout and stderr to prevent any output triggering interaction
+    if git reset --hard HEAD~1 > /dev/null 2>&1; then
         echo "Successfully rolled back one commit."
         echo "Previous commit was: $CURRENT_COMMIT"
+        # Show the new current commit *after* successful rollback
         show_current_commit
         return 0
     else
         echo "Error: Failed to roll back."
+        # Show commit status even on failure
+        show_current_commit
         return 1
     fi
 }
 
-# Main loop
+# --- Main execution ---
+
+# Show the state *before* attempting rollback
+echo "State before rollback attempt:"
 show_current_commit
 
-while true; do
-    read -p "Roll back one commit? (y/n): " answer
-    case $answer in
-        [Yy]* )
-            if ! rollback_one_commit; then
-                echo "Stopping rollback process."
-                break
-            fi
-            ;;
-        [Nn]* )
-            echo "Exiting without further rollbacks."
-            exit 0
-            ;;
-        * )
-            echo "Please answer y or n."
-            ;;
-    esac
-done
+# Attempt the rollback
+rollback_one_commit
+
+# --- End of script ---
 
