@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# Script to roll back a git repository one commit at a time
+
+# Check if current directory is a git repository
+if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+    echo "Error: Not inside a git repository."
+    exit 1
+fi
+
+# Function to display current commit information
+show_current_commit() {
+    echo "Current commit:"
+    git log -1 --oneline
+    echo "-------------------"
+}
+
+# Function to roll back one commit
+rollback_one_commit() {
+    # Save current commit hash for reference
+    CURRENT_COMMIT=$(git rev-parse HEAD)
+    
+    # Check if we're at the initial commit
+    if [ "$(git rev-list --count HEAD)" -eq 1 ]; then
+        echo "Warning: This is the initial commit. Cannot roll back further."
+        return 1
+    fi
+    
+    # Attempt to roll back one commit
+    if git reset --hard HEAD~1; then
+        echo "Successfully rolled back one commit."
+        echo "Previous commit was: $CURRENT_COMMIT"
+        show_current_commit
+        return 0
+    else
+        echo "Error: Failed to roll back."
+        return 1
+    fi
+}
+
+# Main loop
+show_current_commit
+
+while true; do
+    read -p "Roll back one commit? (y/n): " answer
+    case $answer in
+        [Yy]* )
+            if ! rollback_one_commit; then
+                echo "Stopping rollback process."
+                break
+            fi
+            ;;
+        [Nn]* )
+            echo "Exiting without further rollbacks."
+            exit 0
+            ;;
+        * )
+            echo "Please answer y or n."
+            ;;
+    esac
+done
+

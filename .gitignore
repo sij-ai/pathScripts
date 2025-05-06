@@ -38,6 +38,10 @@ log.txt
 *.tmp
 *.bak
 *.swp
+*.wav
+*.mp4
+*.mov
+*.mp3
 *~
 
 # Operating System temporary files

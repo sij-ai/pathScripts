@@ -1,0 +1,154 @@
+#!/usr/bin/env python3
+"""
+convtts.py  –  Article → 2-line Q&A (Ollama) → speech (mlx-audio)
+Requires Apple-Silicon.  Tested with mlx-audio 0.4.0 / Dia-1.6B
+"""
+
+from __future__ import annotations
+import argparse, re, sys, textwrap, traceback, time
+from pathlib import Path
+import requests
+from newspaper import Article
+
+# ─────────────────────────────  mlx-audio  ─────────────────────────────
+try:
+    import mlx.core as mx                              # noqa: F401
+    from mlx_audio.tts.generate import generate_audio
+    import numpy as np, soundfile as sf
+    MLX_OK = True
+except Exception as e:
+    print(f"[mlx-audio import error] {e}", file=sys.stderr)
+    MLX_OK = False
+
+OLLAMA_URL        = "http://localhost:11434/api/generate"
+DEFAULT_TTS_MODEL = "mlx-community/Dia-1.6B"
+HOME_OUTPUTS      = Path.home() / ".mlx_audio" / "outputs"
+
+# ─────────────────────────────  helpers  ───────────────────────────────
+def fetch_article(url: str) -> tuple[str, str]:
+    art = Article(url); art.download(); art.parse()
+    body = re.sub(r"\s{3,}", "\n\n", art.text).strip()
+    if not body:
+        raise RuntimeError("Article text could not be extracted.")
+    return art.title or "Untitled", body
+
+def ask_ollama(model: str, prompt: str) -> str:
+    r = requests.post(OLLAMA_URL,
+                      json={"model": model, "prompt": prompt, "stream": False},
+                      timeout=600)
+    r.raise_for_status()
+    return r.json()["response"].strip()
+
+# ──────────────────────  dialogue-cleaning logic  ──────────────────────
+def extract_dialogue(raw: str) -> str | None:
+    """
+    Return *exactly* two tidy lines:
+        [S1] …sentence…
+        [S2] …sentence…
+    """
+
+    # 1. Strip every <think> … </think> block
+    txt = re.sub(r"<think>.*?</think>", "", raw, flags=re.I | re.S)
+
+    # 2. If there's a ```code block```, use its body
+    block = re.search(r"```(?:.*?\n)?(.*?)```", txt, flags=re.S)
+    txt = block.group(1).strip() if block else txt.strip()
+
+    # 3. Delete everything before the first [S#] tag
+    first = re.search(r"\[[Ss]\d+\]", txt)
+    if not first:
+        return None
+    txt = txt[first.start():]
+
+    # 4. Capture first [S1] …  up to first [S2] …
+    m1 = re.search(r"\[S1\](.*?)(?=\[S2\])", txt, flags=re.I | re.S)
+    m2 = re.search(r"\[S2\](.*?)(?=\[[Ss]\d+\]|$)", txt, flags=re.I | re.S)
+    if not (m1 and m2):
+        return None
+
+    s1 = "[S1] " + m1.group(1).strip()
+    s2 = "[S2] " + m2.group(1).strip()
+
+    # 5. Normalise whitespace: single space inside, newline between lines
+    norm = lambda s: re.sub(r"\s+", " ", s)
+    return f"{norm(s1)}\n{norm(s2)}".strip()
+
+# ──────────────────────────  audio helpers  ────────────────────────────
+def newest_wav(existing: set[Path]) -> Path | None:
+    pool = set(Path.cwd().glob("*.wav")) | set(HOME_OUTPUTS.glob("*.wav"))
+    fresh = [p for p in pool if p not in existing]
+    return max(fresh, key=lambda p: p.stat().st_mtime) if fresh else None
+
+def generate_and_save(text: str, model_path: str,
+                      out_file: Path, sr: int = 24000) -> bool:
+    if not MLX_OK:
+        print("mlx-audio not available", file=sys.stderr)
+        return False
+
+    before = set(Path.cwd().glob("*.wav")) | set(HOME_OUTPUTS.glob("*.wav"))
+    try:
+        data = generate_audio(text=text, model_path=model_path,
+                              sample_rate=sr, join_audio=True, verbose=False)
+    except Exception as e:
+        print(f"[mlx-audio error] {e}", file=sys.stderr)
+        traceback.print_exc(); return False
+
+    # A) generate_audio returned a waveform → save it
+    if data is not None:
+        arr = (np.asarray(data) if isinstance(data, mx.array)
+               else data.numpy() if hasattr(data, "numpy")
+               else np.asarray(data))
+        sf.write(out_file, arr, sr)
+        return out_file.is_file()
+
+    # B) generate_audio wrote its own .wav → locate & move
+    time.sleep(0.4)
+    found = newest_wav(before)
+    if not found: return False
+    try:   found.replace(out_file)
+    except Exception:
+        import shutil; shutil.copy2(found, out_file); found.unlink(missing_ok=True)
+    return out_file.is_file()
+
+# ─────────────────────────────  main  ──────────────────────────────────
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("url")
+    ap.add_argument("-m", "--model", default="llama3.2")
+    ap.add_argument("--output-dir", type=Path, default=Path("."))
+    ap.add_argument("--output-name", default="dialogue_audio.wav")
+    ap.add_argument("--tts-model", default=DEFAULT_TTS_MODEL)
+    ap.add_argument("--sample-rate", type=int, default=24000)
+    args = ap.parse_args()
+
+    args.output_dir.expanduser().mkdir(parents=True, exist_ok=True)
+    out_file = (args.output_dir / args.output_name).with_suffix(".wav")
+
+    title, body = fetch_article(args.url)
+    prompt = textwrap.dedent(f"""
+        Summarise as a TWO-line Q&A (<60 tokens total).
+        Use exact tags [S1] and [S2].  Return **only** the dialogue in a code block.
+
+        ARTICLE:
+        {title}
+
+        {body}
+    """)
+
+    raw = ask_ollama(args.model, prompt)
+    dlg = extract_dialogue(raw)
+    if not dlg:
+        print("Clean 2-line dialogue not found.", file=sys.stderr); sys.exit(1)
+
+    print("\n--- Dialogue sent to TTS ---\n" + dlg + "\n---------------------------\n",
+          file=sys.stderr)
+
+    ok = generate_and_save(dlg, args.tts_model, out_file, args.sample_rate)
+    if ok:
+        print(f"✔ Saved  {out_file.resolve()}")
+    else:
+        print("✖ Audio generation failed.", file=sys.stderr); sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+
