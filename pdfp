@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+import openparse
+import sys
+
+# Check if a command line argument is provided
+if len(sys.argv) > 1:
+    pdf_path = sys.argv[1]
+else:
+    # Prompt the user for the PDF path
+    pdf_path = input("Please enter the path to the PDF file: ")
+
+# Initialize the parser
+parser = openparse.DocumentParser(
+    table_args={
+        "parsing_algorithm": "unitable",
+        "min_table_confidence": 0.8,
+    },
+)
+
+# Parse the PDF
+parsed_nodes = parser.parse(pdf_path)
+print(f"parsed_nodes")
+
