@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# Check if correct number of arguments
+if [ "$#" -ne 4 ] || [ "$2" != "with" ]; then
+    echo "Usage: merge /path/to/first/.state with /path/to/second/.state"
+    exit 1
+fi
+
+# Get file paths from arguments
+first_file="$1"
+second_file="$3"
+
+# Check if files exist
+if [ ! -f "$first_file" ] || [ ! -f "$second_file" ]; then
+    echo "Error: One or both files do not exist."
+    exit 1
+fi
+
+# Create a temporary file
+temp_file=$(mktemp)
+
+# Append first file to second file, filter out blank lines
+cat "$second_file" "$first_file" | grep -v "^$" > "$temp_file"
+
+# Sort the temporary file
+sort "$temp_file" | uniq > "$temp_file.sorted"
+
+# Overwrite the second file with sorted content
+mv "$temp_file.sorted" "$second_file"
+
+# Clean up
+rm "$temp_file"
+
+echo "Successfully merged and sorted files. Result saved to $second_file"
+

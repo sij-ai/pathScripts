@@ -19,5 +19,5 @@ parser = openparse.DocumentParser(
 
 # Parse the PDF
 parsed_nodes = parser.parse(pdf_path)
-print(f"parsed_nodes")
+print(parsed_nodes)
 
