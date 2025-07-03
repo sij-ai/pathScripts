@@ -1,21 +1,103 @@
 #!/bin/bash
 
-# Default directories to search
-directories=("~/sync" "~/workshop")
+# --- Default Configuration ---
+target_dir="."
+dry_run=false
 
-# Check if a command line argument is provided
-if [ $# -gt 0 ]; then
-  directories=("$1")
-fi
+# --- Function Definitions ---
 
-# Iterate through each directory
-for dir in "${directories[@]}"; do
-  # Expand tilde to home directory
-  expanded_dir=$(eval echo "$dir")
+# Function to display help message
+show_help() {
+  echo "Usage: $(basename "$0") [OPTIONS] [DIRECTORY]"
+  echo "Recursively finds and deletes __pycache__ folders."
+  echo ""
+  echo "Options:"
+  echo "  -d, --dry-run    Show what would be deleted without actually deleting anything."
+  echo "  -h, --help       Display this help message and exit."
+  echo ""
+  echo "Arguments:"
+  echo "  DIRECTORY        The target directory to search in. Defaults to the current directory."
+}
 
-  # Find and delete __pycache__ directories
-  find "$expanded_dir" -type d -name "__pycache__" -exec rm -rf {} +
+# --- Argument Parsing ---
+
+# Parse command-line options
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    -d|--dry-run)
+      dry_run=true
+      shift
+      ;;
+    -h|--help)
+      show_help
+      exit 0
+      ;;
+    -*)
+      echo "Error: Unknown option '$1'" >&2
+      show_help
+      exit 1
+      ;;
+    *)
+      # The first non-option argument is the target directory
+      target_dir="$1"
+      shift
+      ;;
+  esac
 done
 
-echo "Deletion of __pycache__ folders completed."
+# --- Main Logic ---
 
+# Expand tilde to home directory if present
+# The 'eval' is safe here because the input is a file path
+expanded_dir=$(eval echo "$target_dir")
+
+# Check if the target directory actually exists
+if [ ! -d "$expanded_dir" ]; then
+  echo "Error: Directory '$expanded_dir' not found." >&2
+  exit 1
+fi
+
+# Find all __pycache__ directories
+# Using process substitution and a while loop is safer than parsing 'find' output directly
+pycache_dirs=()
+while IFS= read -r -d $'\0' dir; do
+  pycache_dirs+=("$dir")
+done < <(find "$expanded_dir" -type d -name "__pycache__" -print0)
+
+# Exit if no __pycache__ directories are found
+if [ ${#pycache_dirs[@]} -eq 0 ]; then
+  echo "No __pycache__ directories found in '$expanded_dir'."
+  exit 0
+fi
+
+# --- Execution ---
+
+if [ "$dry_run" = true ]; then
+  # --- Dry Run Mode ---
+  echo "--- DRY RUN ---"
+  echo "The following __pycache__ directories would be deleted:"
+  for dir in "${pycache_dirs[@]}"; do
+    echo "  - $dir"
+  done
+  echo "No files will be changed."
+else
+  # --- Deletion Mode ---
+  echo "Searching for and deleting __pycache__ folders in '$expanded_dir'..."
+
+  # Calculate initial size
+  initial_size=$(du -sc "${pycache_dirs[@]}" | tail -n 1 | awk '{print $1}')
+
+  # Perform the deletion
+  for dir in "${pycache_dirs[@]}"; do
+    echo "Deleting: $dir"
+    rm -rf "$dir"
+  done
+
+  # Calculate the total size in a human-readable format
+  # The 'numfmt' tool is great for this
+  cleared_space=$(numfmt --to=iec-i --suffix=B --format="%.2f" "$((initial_size * 1024))")
+  
+  echo ""
+  echo "Deletion completed."
+  echo "Cleared approximately $cleared_space of space."
+fi

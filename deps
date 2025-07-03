@@ -44,7 +44,7 @@ KNOWN_CORRECTIONS = {
     'tesseract': 'pytesseract',
     'magic': 'python-magic',
     'multipart': 'python-multipart',
-    'newspaper': 'newspaper3k',
+    'newspaper': 'newspaper4k',
     'srtm': 'elevation',
     'yaml': 'pyyaml',
     'zoneinfo': 'backports.zoneinfo'
