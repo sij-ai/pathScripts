@@ -129,6 +129,35 @@ def read_file_content(file_path):
     except Exception as e:
         return f"Error reading file: {e}"
 
+def should_skip_directory(dir_name):
+    """
+    Determines if a directory should be skipped.
+    """
+    # Skip hidden directories (starting with .)
+    if dir_name.startswith('.'):
+        return True
+    
+    # Skip common directories that should be ignored
+    skip_dirs = {'__pycache__', 'node_modules', '.pytest_cache', '.mypy_cache', 
+                 '.tox', '.venv', 'venv', '.env', 'env', 'build', 'dist', 
+                 '.idea', '.vscode'}
+    
+    return dir_name in skip_dirs
+
+def should_skip_file(file_name):
+    """
+    Determines if a file should be skipped.
+    """
+    # Skip hidden files (starting with .)
+    if file_name.startswith('.'):
+        return True
+    
+    # Skip common files that should be ignored
+    skip_files = {'__pycache__', '.DS_Store', 'Thumbs.db', '.pyc', '.pyo', 
+                  '.pyd', '.so', '.egg', '.egg-info'}
+    
+    return file_name in skip_files or any(file_name.endswith(ext) for ext in ['.pyc', '.pyo', '.pyd'])
+
 def print_codebase(directory, extensions):
     """
     Recursively prints the contents of files with specified extensions.
@@ -141,8 +170,16 @@ def print_codebase(directory, extensions):
     # Collect all matching files first, then sort them
     matching_files = []
     
-    for root, _, files in os.walk(directory):
+    for root, dirs, files in os.walk(directory):
+        # Filter out directories we want to skip
+        # We modify dirs in-place to prevent os.walk from entering those directories
+        dirs[:] = [d for d in dirs if not should_skip_directory(d)]
+        
         for file_name in files:
+            # Skip files we don't want to process
+            if should_skip_file(file_name):
+                continue
+                
             file_path = Path(root) / file_name
             
             # Skip binary files
@@ -180,14 +217,8 @@ def print_codebase(directory, extensions):
         print("```\n")
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: printcodebase <extension1> [extension2] [extension3] ...")
-        print("Example: printcodebase .py .yaml .json")
-        print("Example: printcodebase py yaml json")
-        sys.exit(1)
-    
-    # Get extensions from command-line arguments
-    extensions = sys.argv[1:]
+    # Get extensions from command-line arguments (empty list if no args)
+    extensions = sys.argv[1:] if len(sys.argv) > 1 else []
     
     # Normalize extensions to ensure they start with a dot
     normalized_extensions = []
