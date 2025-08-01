@@ -1,0 +1,321 @@
+#!/bin/bash
+
+# Script version
+VERSION="2.1"
+
+# Default options
+FORCE=false
+VERBOSE=false
+DRY_RUN=false
+OUTPUT_FORMAT="%n - %t"
+KEEP_ORIGINAL=true
+SKIP_VALIDATION=false
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Function to show usage
+usage() {
+    cat << EOF
+Usage: flacsplit [OPTIONS] [directory]
+
+Split FLAC files with CUE sheets into individual tracks.
+
+OPTIONS:
+    -f, --force             Overwrite existing output directories
+    -v, --verbose           Enable verbose output
+    -n, --dry-run           Show what would be done without executing
+    -t, --format FORMAT     Set track naming format (default: "%n - %t")
+    -d, --delete            Delete original FLAC/CUE files after successful split
+    --skip-validation       Skip CUE file validation
+    -h, --help              Show this help message
+    --version               Show version information
+
+ARGUMENTS:
+    directory               Directory to process (default: current directory)
+
+EXAMPLES:
+    flacsplit                           # Process current directory
+    flacsplit /path/to/albums           # Process specific directory
+    flacsplit -f -v ~/Music             # Force overwrite with verbose output
+    flacsplit -n ~/Music                # Dry run to see what would happen
+    flacsplit -t "%02n. %t" ~/Music     # Custom track naming format
+    flacsplit --skip-validation ~/Music # Skip CUE file validation
+
+EOF
+    exit 1
+}
+
+# Function to print colored output
+print_color() {
+    local color=$1
+    shift
+    echo -e "${color}$*${NC}"
+}
+
+# Function to log messages
+log() {
+    [[ $VERBOSE == true ]] && print_color "$BLUE" "[INFO] $*"
+}
+
+# Function to check available disk space
+check_disk_space() {
+    local file="$1"
+    local output_dir="$2"
+    
+    local file_size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+    local available_space=$(df "$(dirname "$output_dir")" | awk 'NR==2 {print $4 * 1024}')
+    
+    if [[ $file_size -gt $available_space ]]; then
+        print_color "$RED" "Error: Insufficient disk space for $file"
+        return 1
+    fi
+    return 0
+}
+
+# Function to validate CUE file (handles indentation)
+validate_cue() {
+    local cue_file="$1"
+    
+    # Check for TRACK entries (allow leading spaces/tabs)
+    if ! grep -q "^[[:space:]]*TRACK" "$cue_file"; then
+        print_color "$YELLOW" "Warning: $cue_file doesn't appear to contain track information"
+        return 1
+    fi
+    
+    # Check for FILE entries (allow leading spaces/tabs)
+    if ! grep -q "^[[:space:]]*FILE" "$cue_file"; then
+        print_color "$YELLOW" "Warning: $cue_file doesn't specify a source file"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to check dependencies
+check_deps() {
+    local missing=0
+    local deps=("shnsplit" "flac" "stat" "df")
+    
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &> /dev/null; then
+            case $dep in
+                shnsplit) print_color "$RED" "Error: 'shnsplit' not found. Install with: brew install shntool" ;;
+                flac) print_color "$RED" "Error: 'flac' not found. Install with: brew install flac" ;;
+                *) print_color "$RED" "Error: '$dep' not found." ;;
+            esac
+            missing=1
+        fi
+    done
+    
+    [[ $missing -eq 1 ]] && exit 1
+}
+
+# Function to cleanup on failure
+cleanup_on_failure() {
+    local dir="$1"
+    if [[ -d "$dir" ]] && [[ -z "$(ls -A "$dir")" ]]; then
+        log "Cleaning up empty directory: $dir"
+        rmdir "$dir"
+    fi
+}
+
+# Function to process a single FLAC file
+process_flac() {
+    local flac_file="$1"
+    local cue_file="${flac_file%.*}.cue"
+    local base_name=$(basename "${flac_file%.*}")
+    local dir_name="$(dirname "$flac_file")/${base_name}_tracks"
+    
+    # Check if CUE file exists
+    if [[ ! -f "$cue_file" ]]; then
+        log "Skipping $flac_file (no matching CUE file)"
+        return 1
+    fi
+    
+    # Validate CUE file (unless skipped)
+    if [[ $SKIP_VALIDATION != true ]] && ! validate_cue "$cue_file"; then
+        print_color "$YELLOW" "Warning: CUE file validation failed for $cue_file"
+        read -p "Continue anyway? (y/N): " -n 1 -r
+        echo
+        [[ ! $REPLY =~ ^[Yy]$ ]] && return 1
+    fi
+    
+    # Check if output directory exists
+    if [[ -d "$dir_name" ]] && [[ $FORCE != true ]]; then
+        print_color "$YELLOW" "Skipping $flac_file (output directory exists, use -f to force)"
+        return 1
+    fi
+    
+    # Check disk space
+    if ! check_disk_space "$flac_file" "$dir_name"; then
+        return 1
+    fi
+    
+    print_color "$GREEN" "Processing: $flac_file"
+    log "CUE file: $cue_file"
+    log "Output directory: $dir_name"
+    log "Track format: $OUTPUT_FORMAT"
+    
+    if [[ $DRY_RUN == true ]]; then
+        print_color "$BLUE" "[DRY RUN] Would split $flac_file into $dir_name"
+        return 0
+    fi
+    
+    # Create/clean output directory
+    if [[ -d "$dir_name" ]]; then
+        log "Removing existing directory: $dir_name"
+        rm -rf "$dir_name"
+    fi
+    
+    if ! mkdir -p "$dir_name"; then
+        print_color "$RED" "Error: Failed to create directory $dir_name"
+        return 1
+    fi
+    
+    # Split the FLAC file
+    log "Running: shnsplit -f '$cue_file' -t '$OUTPUT_FORMAT' -o flac '$flac_file' -d '$dir_name'"
+    
+    if ! shnsplit -f "$cue_file" -t "$OUTPUT_FORMAT" -o flac "$flac_file" -d "$dir_name" 2>/dev/null; then
+        print_color "$RED" "Error: Failed to split $flac_file"
+        cleanup_on_failure "$dir_name"
+        return 1
+    fi
+    
+    # Check if split was successful (output directory should contain files)
+    local track_count=$(find "$dir_name" -name "*.flac" | wc -l)
+    if [[ $track_count -eq 0 ]]; then
+        print_color "$RED" "Error: No tracks generated for $flac_file"
+        cleanup_on_failure "$dir_name"
+        return 1
+    fi
+    
+    print_color "$GREEN" "✓ Successfully split into $track_count tracks"
+    
+    # Delete originals if requested
+    if [[ $KEEP_ORIGINAL != true ]]; then
+        log "Deleting original files: $flac_file, $cue_file"
+        rm "$flac_file" "$cue_file"
+    fi
+    
+    return 0
+}
+
+# Main function to process directories recursively
+process_directory() {
+    local dir="$1"
+    local count=0
+    local total=0
+    
+    # Count total FLAC files first
+    while IFS= read -r -d '' flac_file; do
+        local cue_file="${flac_file%.*}.cue"
+        [[ -f "$cue_file" ]] && ((total++))
+    done < <(find "$dir" -type f -name "*.flac" -print0)
+    
+    if [[ $total -eq 0 ]]; then
+        print_color "$YELLOW" "No FLAC files with matching CUE sheets found in $dir"
+        return 0
+    fi
+    
+    print_color "$BLUE" "Found $total FLAC file(s) with CUE sheets in $dir"
+    
+    # Process all FLAC files
+    while IFS= read -r -d '' flac_file; do
+        if process_flac "$flac_file"; then
+            ((count++))
+        fi
+        
+        # Progress indicator
+        local current=$((count + 1))
+        if [[ $VERBOSE == true ]] && [[ $current -le $total ]]; then
+            print_color "$BLUE" "Progress: $current/$total"
+        fi
+    done < <(find "$dir" -type f -name "*.flac" -print0)
+    
+    if [[ $count -eq 0 ]]; then
+        print_color "$YELLOW" "No files were processed"
+    else
+        print_color "$GREEN" "✓ Successfully processed $count/$total album(s)"
+    fi
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -f|--force)
+            FORCE=true
+            shift
+            ;;
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        -n|--dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -t|--format)
+            OUTPUT_FORMAT="$2"
+            shift 2
+            ;;
+        -d|--delete)
+            KEEP_ORIGINAL=false
+            shift
+            ;;
+        --skip-validation)
+            SKIP_VALIDATION=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        --version)
+            echo "flacsplit version $VERSION"
+            exit 0
+            ;;
+        -*)
+            print_color "$RED" "Unknown option: $1"
+            usage
+            ;;
+        *)
+            TARGET_DIR="$1"
+            shift
+            ;;
+    esac
+done
+
+# Main execution
+print_color "$BLUE" "flacsplit v$VERSION"
+
+# Check dependencies first
+check_deps
+
+# Handle directory argument
+TARGET_DIR="${TARGET_DIR:-.}"
+
+# Verify directory exists
+if [[ ! -d "$TARGET_DIR" ]]; then
+    print_color "$RED" "Error: Directory '$TARGET_DIR' not found"
+    exit 1
+fi
+
+# Show configuration if verbose
+if [[ $VERBOSE == true ]]; then
+    print_color "$BLUE" "Configuration:"
+    echo "  Target directory: $TARGET_DIR"
+    echo "  Force overwrite: $FORCE"
+    echo "  Dry run: $DRY_RUN"
+    echo "  Output format: $OUTPUT_FORMAT"
+    echo "  Keep originals: $KEEP_ORIGINAL"
+    echo "  Skip validation: $SKIP_VALIDATION"
+    echo
+fi
+
+# Process the directory recursively
+process_directory "$(realpath "$TARGET_DIR")"
+
