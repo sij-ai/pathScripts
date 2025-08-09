@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+
+def is_binary(file_path):
+    """
+    Determines if a file is binary by checking its content more thoroughly.
+    Returns True for binary files, False for text files.
+    """
+    try:
+        with open(file_path, 'rb') as f:
+            # Read first 8192 bytes for better detection
+            chunk = f.read(8192)
+            
+            # Empty files are considered text
+            if not chunk:
+                return False
+            
+            # Check for null bytes (strong indicator of binary)
+            if b'\0' in chunk:
+                return True
+            
+            # Check the percentage of non-text characters
+            # Text files should have mostly printable ASCII and common whitespace
+            text_chars = bytearray({7, 8, 9, 10, 12, 13, 27} | set(range(0x20, 0x100)) - {0x7f})
+            non_text_count = sum(1 for byte in chunk if byte not in text_chars)
+            
+            # If more than 30% non-text characters, likely binary
+            if len(chunk) > 0 and (non_text_count / len(chunk)) > 0.30:
+                return True
+                
+            return False
+            
+    except Exception as e:
+        print(f"Error reading file {file_path}: {e}", file=sys.stderr)
+        return True  # Treat unreadable files as binary for safety
+
+def get_language_from_extension(file_path):
+    """
+    Returns the appropriate language identifier for markdown code blocks.
+    Only maps extensions that need different names, otherwise strips the dot.
+    """
+    # Only map extensions that need to be different from the extension name
+    special_mappings = {
+        '.py': 'python',
+        '.js': 'javascript',
+        '.ts': 'typescript',
+        '.md': 'markdown',
+        '.sh': 'bash',
+        '.ps1': 'powershell',
+        '.cc': 'cpp',
+        '.cxx': 'cpp',
+        '.hpp': 'cpp',
+        '.cs': 'csharp',
+        '.rb': 'ruby',
+        '.kt': 'kotlin',
+        '.pl': 'perl',
+        '.R': 'r',  # Handle uppercase R
+        '.mm': 'objective-c',
+        '.dockerfile': 'dockerfile',
+        '.txt': 'text',
+        '.log': 'text',
+        '.gitignore': 'text',
+        '.env': 'bash',
+    }
+    
+    # Get the file extension
+    _, ext = os.path.splitext(file_path)
+    ext_lower = ext.lower()
+    
+    # Handle special cases for files without extensions
+    file_name = os.path.basename(file_path).lower()
+    if file_name in ['dockerfile', 'makefile', 'rakefile', 'gemfile']:
+        return file_name.lower()
+    
+    # Use special mapping if exists, otherwise strip the dot from extension
+    if ext_lower in special_mappings:
+        return special_mappings[ext_lower]
+    elif ext:
+        return ext_lower[1:]  # Remove the dot
+    else:
+        return 'text'  # Files without extensions default to text
+
+def print_file_contents(file_path, base_directory):
+    """
+    Prints the contents of a file with markdown formatting.
+    """
+    try:
+        # Get relative path from base directory
+        relative_path = os.path.relpath(file_path, base_directory)
+        
+        # Get language for syntax highlighting
+        language = get_language_from_extension(file_path)
+        
+        # Print markdown header with relative path
+        print(f"## ./{relative_path}")
+        print()
+        
+        # Read and print file contents
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+            print(f"```{language}")
+            print(content, end='')
+            if not content.endswith('\n'):
+                print()  # Add newline if file doesn't end with one
+            print("```")
+            print()
+            
+    except Exception as e:
+        print(f"Error reading file {file_path}: {e}", file=sys.stderr)
+        print()
+
+def should_exclude_directory(dir_path, exclude_dirs):
+    """
+    Check if a directory should be excluded based on the exclude list.
+    """
+    dir_name = os.path.basename(dir_path)
+    return dir_name in exclude_dirs
+
+def process_files_in_directory(directory, extensions=None, exclude_dirs=None):
+    """
+    Recursively processes all text files (optionally filtered by extensions) within the directory
+    and prints their contents with markdown formatting.
+    """
+    if exclude_dirs is None:
+        exclude_dirs = set()
+    
+    total_files = 0
+    
+    for root, dirs, files in os.walk(directory):
+        # Remove excluded directories from dirs list to prevent os.walk from entering them
+        dirs[:] = [d for d in dirs if not should_exclude_directory(os.path.join(root, d), exclude_dirs)]
+        
+        for file_name in files:
+            file_path = os.path.join(root, file_name)
+
+            # Skip binary files
+            if is_binary(file_path):
+                continue
+
+            # Check for extensions if provided
+            if extensions and not file_name.lower().endswith(tuple(extensions)):
+                continue
+
+            # Print file contents
+            print_file_contents(file_path, directory)
+            total_files += 1
+
+    return total_files
+
+def parse_arguments():
+    """
+    Parse command line arguments.
+    Returns: (extensions, exclude_dirs)
+    """
+    extensions = []
+    exclude_dirs = set()
+    
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg == '--exclude' or arg == '-e':
+            # Next argument(s) are directories to exclude
+            i += 1
+            if i < len(sys.argv):
+                exclude_dirs.add(sys.argv[i])
+        else:
+            # Regular extension argument
+            extensions.append(arg.lower())
+        i += 1
+    
+    return extensions if extensions else None, exclude_dirs
+
+if __name__ == "__main__":
+    # Parse command line arguments
+    extensions, exclude_dirs = parse_arguments()
+    
+    # Add common directories to exclude by default
+    default_excludes = {
+        'node_modules', '.git', '__pycache__', '.pytest_cache', 
+        'venv', '.venv', 'env', '.env', 'build', 'dist', 
+        '.next', '.nuxt', 'target', 'bin', 'obj'
+    }
+    exclude_dirs.update(default_excludes)
+
+    # Get the current working directory
+    current_dir = os.getcwd()
+    
+    # Print header information to stderr
+    print(f"# Code Contents for {os.path.basename(current_dir)}", file=sys.stderr)
+    if extensions:
+        print(f"Filtering by extensions: {', '.join(extensions)}", file=sys.stderr)
+    if exclude_dirs:
+        print(f"Excluding directories: {', '.join(sorted(exclude_dirs))}", file=sys.stderr)
+    print("", file=sys.stderr)
+    
+    # Process files and print contents
+    total_files = process_files_in_directory(current_dir, extensions, exclude_dirs)
+    
+    # Print summary to stderr
+    print(f"Processed {total_files} files", file=sys.stderr)
+

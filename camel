@@ -24,7 +24,10 @@ def is_word(word):
     
     in_words = word.lower() in word_set
     in_wordnet = bool(wordnet.synsets(word))
-    result = in_words and in_wordnet
+    
+    # If it's in the words corpus, that's sufficient for most cases
+    # WordNet is more restrictive and doesn't include many function words
+    result = in_words or in_wordnet
     print(f"  Checking if '{word}' is in dictionary: {result} (words:{in_words}, wordnet:{in_wordnet})")
     return result
 
@@ -62,7 +65,7 @@ def split_filename(filename):
     ext = os.path.splitext(filename)[1]
     
     print(f"Splitting on delimiters...")
-    parts = re.split('([_\-\s])', base)
+    parts = re.split(r'([_\-\s])', base)
     
     result = []
     for part in parts:

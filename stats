@@ -13,12 +13,42 @@ while getopts "d:n:" opt; do
   esac
 done
 
-# Capture header (split-second)
-HEADER=$(pidstat -u 1 1 | grep "UID.*Command" | head -n 1)
+# Check if pidstat is available (Linux)
+if command -v pidstat >/dev/null 2>&1; then
+    # Original pidstat functionality for Linux
+    HEADER=$(pidstat -u 1 1 | grep "UID.*Command" | head -n 1)
+    BODY=$(pidstat -u "$DURATION" 1 | grep "Average" | sort -k8 -nr | head -n "$NUM_PROCS")
+    echo "$HEADER"
+    echo "$BODY"
+else
+    # macOS equivalent using top
+    echo "Time: $(date '+%H:%M:%S')    UID       PID    %usr %system  %guest    %CPU   CPU  Command"
+    
+    # Run top for specified duration, parse output, sort by CPU
+    top -l 2 -o cpu -n $NUM_PROCS -s $DURATION | \
+        awk '
+        /^[0-9]/ { 
+            # Extract: PID(1), COMMAND(2), %CPU(3), USER(28)
+            pid = $1; 
+            cmd = $2; 
+            cpu = $3; 
+            user = $28;
+            
+            # Store highest CPU value seen for each PID (averaging effect)
+            if (cpu > max_cpu[pid] || max_cpu[pid] == "") {
+                max_cpu[pid] = cpu;
+                command[pid] = cmd;
+                username[pid] = user;
+            }
+        }
+        END {
+            # Sort by CPU and output top N processes
+            for (pid in max_cpu) {
+                printf "Average:      %-9s %-6s %5.2f    %5.2f   %5.2f   %5.2f   %3s  %s\n", 
+                       username[pid], pid, max_cpu[pid], 0.0, 0.0, max_cpu[pid], "-", command[pid];
+            }
+        }' | \
+        sort -k6 -nr | \
+        head -n $NUM_PROCS
+fi
 
-# Capture body (sorted by %CPU)
-BODY=$(pidstat -u "$DURATION" 1 | grep "Average" | sort -k8 -nr | head -n "$NUM_PROCS")
-
-# Output
-echo "$HEADER"
-echo "$BODY"

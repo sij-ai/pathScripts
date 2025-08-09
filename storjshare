@@ -1,0 +1,80 @@
+#!/bin/bash
+
+# Load .env file if it exists
+SCRIPT_DIR="$(dirname "$0")"
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    export $(grep -v '^#' "$SCRIPT_DIR/.env" | xargs)
+fi
+
+# Check if file path is provided
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 <file_path> [--in <bucket_path>]"
+    exit 1
+fi
+
+FILE_PATH="$1"
+BUCKET_PATH=""
+
+# Parse optional --in argument
+if [ "$2" = "--in" ] && [ -n "$3" ]; then
+    BUCKET_PATH="$3"
+fi
+
+# Check if file exists
+if [ ! -f "$FILE_PATH" ]; then
+    echo "Error: File '$FILE_PATH' not found"
+    exit 1
+fi
+
+# Check environment variables
+if [ -z "$STORJ_PUBLIC_ACCESS" ] || [ -z "$STORJ_PUBLIC_SECRET" ]; then
+    echo "Error: STORJ_PUBLIC_ACCESS and STORJ_PUBLIC_SECRET environment variables must be set"
+    exit 1
+fi
+
+# Extract filename
+FILENAME=$(basename "$FILE_PATH")
+
+# Determine S3 key
+if [ -n "$BUCKET_PATH" ]; then
+    # Remove leading slash and construct path
+    BUCKET_PATH=$(echo "$BUCKET_PATH" | sed 's|^/||')
+    S3_KEY="$BUCKET_PATH/$FILENAME"
+else
+    S3_KEY="$FILENAME"
+fi
+
+# Get file size and content type
+FILE_SIZE=$(stat -f%z "$FILE_PATH" 2>/dev/null || stat -c%s "$FILE_PATH" 2>/dev/null)
+CONTENT_TYPE=$(file -b --mime-type "$FILE_PATH")
+
+# Generate date for signature
+DATE=$(date -u +"%a, %d %b %Y %H:%M:%S GMT")
+
+# Create string to sign
+STRING_TO_SIGN="PUT\n\n$CONTENT_TYPE\n$DATE\n/public/$S3_KEY"
+
+# Generate signature
+SIGNATURE=$(echo -n "$STRING_TO_SIGN" | openssl dgst -sha1 -hmac "$STORJ_PUBLIC_SECRET" -binary | base64)
+
+echo "Uploading $FILENAME to Storj..."
+
+# Upload using curl
+curl -X PUT \
+  -H "Host: gateway.storjshare.io" \
+  -H "Date: $DATE" \
+  -H "Content-Type: $CONTENT_TYPE" \
+  -H "Content-Length: $FILE_SIZE" \
+  -H "Authorization: AWS $STORJ_PUBLIC_ACCESS:$SIGNATURE" \
+  -H "x-amz-acl: public-read" \
+  --data-binary "@$FILE_PATH" \
+  "https://gateway.storjshare.io/public/$S3_KEY"
+
+if [ $? -eq 0 ]; then
+    echo
+    echo "https://sij.law/pub/$S3_KEY"
+else
+    echo "Error: Upload failed"
+    exit 1
+fi
+
