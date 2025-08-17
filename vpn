@@ -21,10 +21,14 @@ PRIVACY_FRIENDLY_COUNTRIES = [
 ]
 
 TAILSCALE_ARGS = [
-    '--exit-node-allow-lan-access',
-    '--accept-dns',
-    '--accept-routes'
+    '--exit-node-allow-lan-access=true',
+    '--accept-dns=true',
+    '--advertise-exit-node=false',
+    '--advertise-routes=',
+    '--accept-routes=false'
 ]
+
+#  --accept-dns=true --accept-routes=false --advertise-exit-node=false --advertise-routes=""
 
 def get_mullvad_info():
     """Fetch JSON info from Mullvad's 'am.i.mullvad.net/json' endpoint."""
