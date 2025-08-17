@@ -1,169 +1,258 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# organize_albums.sh
+# Organize "Artist - Album" folders into artist directories.
+# - --dry-run / -n: simulate
+# - --createartist: create artist dirs when >=2 albums detected for that artist
+# - Ignores leading year prefixes (1900..current year):
+#     "YYYY - ", "YYYY. ", "YYYY ", "(YYYY) "
 
-# --- Default Settings ---
+set -o pipefail
+
+# --- Defaults ---
 DRY_RUN=false
 CREATE_ARTIST=false
 
-# --- Command-Line Argument Parsing ---
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        -n|--dry-run) DRY_RUN=true; shift ;;
-        --createartist) CREATE_ARTIST=true; shift ;;
-        *) echo "Unknown parameter passed: $1"; exit 1 ;;
-    esac
+# --- CLI parsing ---
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [--dry-run|-n] [--createartist]
+
+Options:
+  -n, --dry-run       Simulate actions; do not create or move anything
+      --createartist  Create artist folders when 2+ albums found for an artist
+                      (after stripping date prefixes)
+
+Rules:
+  - A folder is an album only if, AFTER stripping an optional leading year
+    (1900..current year; "YYYY - ", "YYYY. ", "YYYY ", "(YYYY) "), it contains " - ".
+  - The text before the first " - " (after stripping) is the artist name.
+  - Year-only directories like "1999" are ignored (never created).
+  - Existing artist directories are detected similarly, ignoring year prefixes.
+  - With --createartist, new artist directories are created only when >=2 albums
+    for that artist are found and no artist dir (normalized) exists.
+  - Never overwrites: collisions are reported and skipped.
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n|--dry-run) DRY_RUN=true; shift ;;
+    --createartist) CREATE_ARTIST=true; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown parameter: $1"; usage; exit 1 ;;
+  esac
 done
 
-# --- Script Setup ---
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# --- Colors ---
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
+error(){ echo -e "${RED}$*${NC}" >&2; }
+info(){  echo -e "${BLUE}$*${NC}"; }
+ok(){    echo -e "${GREEN}$*${NC}"; }
+warn(){  echo -e "${YELLOW}$*${NC}"; }
 
-# Arrays to track planned operations
-declare -a albums_to_move=()
-declare -a artists_to_create=()
-declare -a collisions=()
+# --- Year helpers ---
+MIN_YEAR=1900
+CURRENT_YEAR=$(date +%Y)
 
-# --- Main Logic ---
-echo -e "${GREEN}Starting music library organization...${NC}"
-if [ "$DRY_RUN" = true ]; then
-    echo -e "${BLUE}=== DRY RUN MODE - NO FILES WILL BE MOVED OR CREATED ===${NC}"
+is_year_in_range() {
+  local y="$1"
+  [[ "$y" =~ ^[0-9]{4}$ ]] || return 1
+  (( y >= MIN_YEAR && y <= CURRENT_YEAR ))
+}
+
+# Return 0 if name begins with a recognizable year prefix we ignore
+begins_with_year_prefix() {
+  local s="$1"
+  # (YYYY) ...
+  if [[ "$s" =~ ^\(([0-9]{4})\)[[:space:]]+ ]]; then
+    is_year_in_range "${BASH_REMATCH[1]}" && return 0
+  fi
+  # YYYY [.-]? +space(s) ...
+  if [[ "$s" =~ ^([0-9]{4})[[:space:]]*([.-])?[[:space:]]+ ]]; then
+    is_year_in_range "${BASH_REMATCH[1]}" && return 0
+  fi
+  return 1
+}
+
+# Strip a leading year prefix if in range:
+# - "(YYYY) "
+# - "YYYY - ", "YYYY. ", "YYYY "
+strip_year_prefix() {
+  local s="$1"
+  # (YYYY) case
+  if [[ "$s" =~ ^\(([0-9]{4})\)[[:space:]]+(.*)$ ]]; then
+    local y="${BASH_REMATCH[1]}"; local rest="${BASH_REMATCH[2]}"
+    if is_year_in_range "$y"; then
+      echo "$rest"; return 0
+    fi
+  fi
+  # YYYY [.-]? + spaces case
+  if [[ "$s" =~ ^([0-9]{4})[[:space:]]*([.-])?[[:space:]]+(.*)$ ]]; then
+    local y="${BASH_REMATCH[1]}"; local rest="${BASH_REMATCH[3]}"
+    if is_year_in_range "$y"; then
+      echo "$rest"; return 0
+    fi
+  fi
+  echo "$s"
+}
+
+# --- Data structures ---
+declare -a ALL_DIRS=()
+declare -a CREATE_LIST=()
+declare -a MOVE_PLAN=()      # entries: targetDir|albumDirName
+declare -a COLLISIONS=()
+
+declare -A ARTIST_DIR_MAP=()     # normalized artist -> existing dir name (actual on disk)
+declare -A ARTIST_DIR_SCORE=()   # prefer score 2 (no year prefix) over 1 (year-prefixed)
+declare -A ALBUM_NORM_ARTIST=()  # album dir name -> normalized artist
+declare -A ARTIST_ALBUM_COUNT=() # normalized artist -> count of album dirs
+declare -A TO_CREATE_SET=()      # normalized artist -> 1
+
+# --- Read top-level directories (names only) ---
+while IFS= read -r -d '' d; do
+  # store basename only
+  ALL_DIRS+=("$(basename "$d")")
+done < <(find . -maxdepth 1 -mindepth 1 -type d -print0)
+
+# --- Classify each directory ---
+for name in "${ALL_DIRS[@]}"; do
+  # Skip year-only directories like "1999"
+  if is_year_in_range "$name"; then
+    continue
+  fi
+
+  stripped="$(strip_year_prefix "$name")"
+
+  if [[ "$stripped" == *" - "* ]]; then
+    # Treat as an album candidate
+    artist="${stripped%% - *}"
+    ALBUM_NORM_ARTIST["$name"]="$artist"
+    (( ARTIST_ALBUM_COUNT["$artist"]++ )) || true
+    continue
+  fi
+
+  # Treat as an existing artist directory (normalized)
+  eff_artist="$stripped"
+  # Score: 2 for a clean artist dir; 1 for one that began with a year prefix
+  score=2
+  begins_with_year_prefix "$name" && score=1
+
+  if [[ -n "${ARTIST_DIR_MAP[$eff_artist]+x}" ]]; then
+    prev="${ARTIST_DIR_SCORE[$eff_artist]}"
+    (( score > prev )) && { ARTIST_DIR_MAP["$eff_artist"]="$name"; ARTIST_DIR_SCORE["$eff_artist"]=$score; }
+  else
+    ARTIST_DIR_MAP["$eff_artist"]="$name"
+    ARTIST_DIR_SCORE["$eff_artist"]=$score
+  fi
+done
+
+# --- Decide which artists to create (if requested) ---
+if $CREATE_ARTIST; then
+  for artist in "${!ARTIST_ALBUM_COUNT[@]}"; do
+    # Only create if missing and >= 2 albums detected
+    if [[ -z "${ARTIST_DIR_MAP[$artist]+x}" && ${ARTIST_ALBUM_COUNT[$artist]} -ge 2 ]]; then
+      TO_CREATE_SET["$artist"]=1
+    fi
+  done
 fi
+
+# CREATE_LIST from set (stable order without breaking spaces)
+if [[ ${#TO_CREATE_SET[@]} -gt 0 ]]; then
+  while IFS= read -r -d '' a; do CREATE_LIST+=("$a"); done < <(
+    for a in "${!TO_CREATE_SET[@]}"; do printf '%s\0' "$a"; done | sort -z
+  )
+fi
+
+# --- Build move plan ---
+for album_dir in "${!ALBUM_NORM_ARTIST[@]}"; do
+  norm_artist="${ALBUM_NORM_ARTIST[$album_dir]}"
+
+  # Determine target artist directory
+  if [[ -n "${ARTIST_DIR_MAP[$norm_artist]+x}" ]]; then
+    target_dir="./${ARTIST_DIR_MAP[$norm_artist]}"
+  elif [[ -n "${TO_CREATE_SET[$norm_artist]+x}" ]]; then
+    target_dir="./$norm_artist"
+  else
+    # No existing artist dir and not creating one -> skip
+    continue
+  fi
+
+  source_path="./$album_dir"
+  target_path="$target_dir/$album_dir"
+
+  if [[ -e "$target_path" ]]; then
+    COLLISIONS+=("$target_dir|$album_dir")
+  else
+    MOVE_PLAN+=("$target_dir|$album_dir")
+  fi
+done
+
+# --- Report plan ---
+ok "Starting music library organization..."
+$DRY_RUN && info "=== DRY RUN MODE - NO FILES WILL BE MOVED OR CREATED ==="
 echo "==================================================="
 
-# --- Phase 1: Find albums for EXISTING artist folders ---
-echo -e "\n${BLUE}PHASE 1: Scanning for albums of existing artists...${NC}"
-for dir in */; do
-    if [ -d "$dir" ]; then
-        base="${dir%/}"
-        # Find matching album directories
-        while IFS= read -r -d '' match_dir; do
-            album_name=$(basename "$match_dir")
-            # Queue the move operation
-            albums_to_move+=("$base|$album_name")
-        done < <(find . -maxdepth 1 -type d -name "${base} - *" -print0 2>/dev/null)
-    fi
-done
-
-# --- Phase 2: Find NEW artists to create (if --createartist is set) ---
-if [ "$CREATE_ARTIST" = true ]; then
-    echo -e "\n${BLUE}PHASE 2: Scanning for new artists to create (--createartist)...${NC}"
-    
-    # Create a temporary file to hold potential artist names
-    potential_artists_file=$(mktemp)
-    # Find all folders with " - ", extract the part before it, sort, and count
-    find . -maxdepth 1 -type d -name "* - *" -print0 | xargs -0 -I {} basename "{}" | sed 's/ - .*//' | sort | uniq -c > "$potential_artists_file"
-    
-    # Read the file and find artists with >= 2 albums that don't already have a folder
-    while read -r count artist; do
-        if [[ "$count" -ge 2 && ! -d "$artist" ]]; then
-            echo -e "${GREEN}Found potential new artist: '$artist' with $count albums.${NC}"
-            artists_to_create+=("$artist")
-            # Find all albums for this new artist and queue them for moving
-            while IFS= read -r -d '' album_dir; do
-                album_name=$(basename "$album_dir")
-                albums_to_move+=("$artist|$album_name")
-            done < <(find . -maxdepth 1 -type d -name "${artist} - *" -print0 2>/dev/null)
-        fi
-    done < "$potential_artists_file"
-    
-    rm "$potential_artists_file"
+info "PHASE: Planned operations"
+if [[ ${#CREATE_LIST[@]} -gt 0 ]]; then
+  ok "Artist folders to CREATE:"
+  for a in "${CREATE_LIST[@]}"; do
+    echo "[DRY RUN] Would create directory: $a"
+  done
 fi
 
-# --- Phase 3: Review and Execute Operations ---
-echo -e "\n${BLUE}PHASE 3: Reviewing and executing planned operations...${NC}"
-
-if [ ${#artists_to_create[@]} -eq 0 ] && [ ${#albums_to_move[@]} -eq 0 ]; then
-    echo -e "\n${YELLOW}No organization tasks found. Library is clean.${NC}"
-    exit 0
-fi
-
-echo -e "\n--- Operation Plan ---"
-if [ ${#artists_to_create[@]} -gt 0 ]; then
-    echo -e "${GREEN}Artist folders to CREATE:${NC}"
-    for artist in "${artists_to_create[@]}"; do
-        echo "  └─ $artist"
-    done
-fi
-if [ ${#albums_to_move[@]} -gt 0 ]; then
-    echo -e "${GREEN}Albums to MOVE:${NC}"
-    for pair in "${albums_to_move[@]}"; do
-        artist="${pair%|*}"
-        album="${pair#*|}"
-        echo "  └─ '$album'  ->  '$artist/'"
-    done
-fi
-echo "----------------------"
-
-
-# Ask for confirmation if not a dry run
-if [ "$DRY_RUN" = false ]; then
-    echo -e "\n${YELLOW}Do you want to proceed with the plan above? (y/N)${NC}"
-    read -r response
-    if [[ ! "$response" =~ ^[Yy]$ ]]; then
-        echo "Operation cancelled."
-        exit 0
-    fi
-fi
-
-# Execute the plan
-echo -e "\n${BLUE}Executing plan...${NC}"
-# Create new artist folders
-for artist in "${artists_to_create[@]}"; do
-    if [ "$DRY_RUN" = true ]; then
-        echo -e "[DRY RUN] Would create directory: ${YELLOW}$artist${NC}"
-    else
-        echo -e "Creating directory: ${YELLOW}$artist${NC}"
-        mkdir "$artist"
-    fi
-done
-
-# Move albums
-for pair in "${albums_to_move[@]}"; do
-    artist="${pair%|*}"
+if [[ ${#MOVE_PLAN[@]} -gt 0 ]]; then
+  ok "Albums to MOVE:"
+  for pair in "${MOVE_PLAN[@]}"; do
+    target_dir="${pair%|*}"
     album="${pair#*|}"
-    
-    source_path="./$album"
-    target_dir="./$artist"
-    target_path="$target_dir/$album"
-    
-    # Check for collision RIGHT BEFORE moving
-    if [ -e "$target_path" ]; then
-        echo -e "${RED}✗ Collision detected for '$album' in '$artist/' (skipping).${NC}"
-        collisions+=("COLLISION: $artist|$album")
-        continue
-    fi
-    
-    if [ "$DRY_RUN" = true ]; then
-        echo -e "[DRY RUN] Would move ${YELLOW}'$album'${NC} -> ${GREEN}'$artist/'${NC}"
+    echo "[DRY RUN] Would move '$album' -> '${target_dir#./}/'"
+  done
+fi
+
+if [[ ${#COLLISIONS[@]} -gt 0 ]]; then
+  warn "Collisions detected (skipped):"
+  for c in "${COLLISIONS[@]}"; do
+    td="${c%|*}"; al="${c#*|}"
+    echo "  ✗ ${td#./}/$al"
+  done
+fi
+
+# --- Execute (if not dry-run) ---
+if ! $DRY_RUN; then
+  echo
+  read -r -p "Proceed with the actions above? (y/N) " ans
+  [[ "$ans" =~ ^[Yy]$ ]] || { warn "Cancelled."; exit 0; }
+
+  # Create artist directories
+  for a in "${CREATE_LIST[@]}"; do
+    if [[ -e "./$a" ]]; then
+      warn "Artist directory already exists (skipping create): $a"
     else
-        echo -e "Moving ${YELLOW}'$album'${NC} -> ${GREEN}'$artist/'${NC}"
-        mv "$source_path" "$target_path"
+      mkdir "./$a" || error "Failed to create: $a"
     fi
-done
+  done
 
+  # Move albums
+  for pair in "${MOVE_PLAN[@]}"; do
+    target_dir="${pair%|*}"
+    album="${pair#*|}"
+    source_path="./$album"
+    target_path="$target_dir/$album"
 
-# --- Phase 4: Final Report ---
-echo -e "\n${GREEN}===================================================${NC}"
-if [ "$DRY_RUN" = true ]; then
-    echo -e "${GREEN}DRY RUN SUMMARY${NC}"
-else
-    echo -e "${GREEN}OPERATION SUMMARY${NC}"
+    if [[ -e "$target_path" ]]; then
+      warn "Collision right before move (skipped): ${target_dir#./}/$album"
+      continue
+    fi
+    mv -n -- "$source_path" "$target_path" || warn "Move failed: $album -> ${target_dir#./}/"
+  done
 fi
-echo -e "${GREEN}===================================================${NC}"
 
-if [ ${#collisions[@]} -gt 0 ]; then
-    echo -e "\n${RED}${#collisions[@]} collisions were detected and skipped:${NC}"
-    for collision in "${collisions[@]}"; do
-        info="${collision#COLLISION: }"
-        artist="${info%|*}"
-        album="${info#*|}"
-        echo -e "  ${RED}✗${NC} $artist/$album"
-    done
-    echo -e "${YELLOW}You can re-run the script to attempt merging these collisions.${NC}"
-else
-    echo -e "\n${GREEN}No collisions detected.${NC}"
-fi
+echo
+ok "Summary"
+echo "--------"
+echo "Created artist folders: ${#CREATE_LIST[@]}"
+echo "Moved albums:           ${#MOVE_PLAN[@]}"
+echo "Collisions skipped:     ${#COLLISIONS[@]}"
+
+$DRY_RUN && info "Dry run complete. Re-run without --dry-run to apply changes."
 
