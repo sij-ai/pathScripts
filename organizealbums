@@ -1,0 +1,169 @@
+#!/bin/bash
+
+# --- Default Settings ---
+DRY_RUN=false
+CREATE_ARTIST=false
+
+# --- Command-Line Argument Parsing ---
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -n|--dry-run) DRY_RUN=true; shift ;;
+        --createartist) CREATE_ARTIST=true; shift ;;
+        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    esac
+done
+
+# --- Script Setup ---
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Arrays to track planned operations
+declare -a albums_to_move=()
+declare -a artists_to_create=()
+declare -a collisions=()
+
+# --- Main Logic ---
+echo -e "${GREEN}Starting music library organization...${NC}"
+if [ "$DRY_RUN" = true ]; then
+    echo -e "${BLUE}=== DRY RUN MODE - NO FILES WILL BE MOVED OR CREATED ===${NC}"
+fi
+echo "==================================================="
+
+# --- Phase 1: Find albums for EXISTING artist folders ---
+echo -e "\n${BLUE}PHASE 1: Scanning for albums of existing artists...${NC}"
+for dir in */; do
+    if [ -d "$dir" ]; then
+        base="${dir%/}"
+        # Find matching album directories
+        while IFS= read -r -d '' match_dir; do
+            album_name=$(basename "$match_dir")
+            # Queue the move operation
+            albums_to_move+=("$base|$album_name")
+        done < <(find . -maxdepth 1 -type d -name "${base} - *" -print0 2>/dev/null)
+    fi
+done
+
+# --- Phase 2: Find NEW artists to create (if --createartist is set) ---
+if [ "$CREATE_ARTIST" = true ]; then
+    echo -e "\n${BLUE}PHASE 2: Scanning for new artists to create (--createartist)...${NC}"
+    
+    # Create a temporary file to hold potential artist names
+    potential_artists_file=$(mktemp)
+    # Find all folders with " - ", extract the part before it, sort, and count
+    find . -maxdepth 1 -type d -name "* - *" -print0 | xargs -0 -I {} basename "{}" | sed 's/ - .*//' | sort | uniq -c > "$potential_artists_file"
+    
+    # Read the file and find artists with >= 2 albums that don't already have a folder
+    while read -r count artist; do
+        if [[ "$count" -ge 2 && ! -d "$artist" ]]; then
+            echo -e "${GREEN}Found potential new artist: '$artist' with $count albums.${NC}"
+            artists_to_create+=("$artist")
+            # Find all albums for this new artist and queue them for moving
+            while IFS= read -r -d '' album_dir; do
+                album_name=$(basename "$album_dir")
+                albums_to_move+=("$artist|$album_name")
+            done < <(find . -maxdepth 1 -type d -name "${artist} - *" -print0 2>/dev/null)
+        fi
+    done < "$potential_artists_file"
+    
+    rm "$potential_artists_file"
+fi
+
+# --- Phase 3: Review and Execute Operations ---
+echo -e "\n${BLUE}PHASE 3: Reviewing and executing planned operations...${NC}"
+
+if [ ${#artists_to_create[@]} -eq 0 ] && [ ${#albums_to_move[@]} -eq 0 ]; then
+    echo -e "\n${YELLOW}No organization tasks found. Library is clean.${NC}"
+    exit 0
+fi
+
+echo -e "\n--- Operation Plan ---"
+if [ ${#artists_to_create[@]} -gt 0 ]; then
+    echo -e "${GREEN}Artist folders to CREATE:${NC}"
+    for artist in "${artists_to_create[@]}"; do
+        echo "  └─ $artist"
+    done
+fi
+if [ ${#albums_to_move[@]} -gt 0 ]; then
+    echo -e "${GREEN}Albums to MOVE:${NC}"
+    for pair in "${albums_to_move[@]}"; do
+        artist="${pair%|*}"
+        album="${pair#*|}"
+        echo "  └─ '$album'  ->  '$artist/'"
+    done
+fi
+echo "----------------------"
+
+
+# Ask for confirmation if not a dry run
+if [ "$DRY_RUN" = false ]; then
+    echo -e "\n${YELLOW}Do you want to proceed with the plan above? (y/N)${NC}"
+    read -r response
+    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        echo "Operation cancelled."
+        exit 0
+    fi
+fi
+
+# Execute the plan
+echo -e "\n${BLUE}Executing plan...${NC}"
+# Create new artist folders
+for artist in "${artists_to_create[@]}"; do
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "[DRY RUN] Would create directory: ${YELLOW}$artist${NC}"
+    else
+        echo -e "Creating directory: ${YELLOW}$artist${NC}"
+        mkdir "$artist"
+    fi
+done
+
+# Move albums
+for pair in "${albums_to_move[@]}"; do
+    artist="${pair%|*}"
+    album="${pair#*|}"
+    
+    source_path="./$album"
+    target_dir="./$artist"
+    target_path="$target_dir/$album"
+    
+    # Check for collision RIGHT BEFORE moving
+    if [ -e "$target_path" ]; then
+        echo -e "${RED}✗ Collision detected for '$album' in '$artist/' (skipping).${NC}"
+        collisions+=("COLLISION: $artist|$album")
+        continue
+    fi
+    
+    if [ "$DRY_RUN" = true ]; then
+        echo -e "[DRY RUN] Would move ${YELLOW}'$album'${NC} -> ${GREEN}'$artist/'${NC}"
+    else
+        echo -e "Moving ${YELLOW}'$album'${NC} -> ${GREEN}'$artist/'${NC}"
+        mv "$source_path" "$target_path"
+    fi
+done
+
+
+# --- Phase 4: Final Report ---
+echo -e "\n${GREEN}===================================================${NC}"
+if [ "$DRY_RUN" = true ]; then
+    echo -e "${GREEN}DRY RUN SUMMARY${NC}"
+else
+    echo -e "${GREEN}OPERATION SUMMARY${NC}"
+fi
+echo -e "${GREEN}===================================================${NC}"
+
+if [ ${#collisions[@]} -gt 0 ]; then
+    echo -e "\n${RED}${#collisions[@]} collisions were detected and skipped:${NC}"
+    for collision in "${collisions[@]}"; do
+        info="${collision#COLLISION: }"
+        artist="${info%|*}"
+        album="${info#*|}"
+        echo -e "  ${RED}✗${NC} $artist/$album"
+    done
+    echo -e "${YELLOW}You can re-run the script to attempt merging these collisions.${NC}"
+else
+    echo -e "\n${GREEN}No collisions detected.${NC}"
+fi
+
