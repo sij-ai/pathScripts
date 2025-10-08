@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 # rerun <history_id>
-# Prints the stored command for the given oh-my-zsh history ID,
+# Prints the oh-my-zsh history entry for the given ID,
 # converting literal "\n" sequences into real newlines.
 
 if [[ $# -ne 1 || ! "$1" =~ ^[0-9]+$ ]]; then
@@ -12,21 +12,20 @@ fi
 
 id="$1"
 
-if ! command -v omz_history >/dev/null 2>&1; then
-    echo "rerun: omz_history not found in PATH" >&2
+if ! command -v zsh >/dev/null 2>&1; then
+    echo "rerun: zsh not found" >&2
     exit 127
 fi
 
-# Fetch the matching history line, which looks like: " 6610* <escaped-command-with-\n>"
-line="$(omz_history | grep -E "^ *${id}\* " -m1 || true)"
+# Run an interactive zsh so oh-my-zsh functions (omz_history) are available.
+# Strip the leading " <id>* " prefix and return the rest of the line.
+line="$(zsh -ic "omz_history | sed -n -E \"s/^ *${id}\* //p\" | head -n1" 2>/dev/null || true)"
+
 if [[ -z "$line" ]]; then
     echo "rerun: no history entry found for id ${id}" >&2
     exit 1
 fi
 
-# Strip the leading " <id>* " prefix
-content="$(printf '%s' "$line" | sed -E "s/^ *${id}\* //")"
-
-# Interpret backslash escapes so "\n" becomes a real newline
-printf '%b\n' "$content"
+# Expand literal backslash-escaped sequences like \n to real newlines
+printf '%b\n' "$line"
 

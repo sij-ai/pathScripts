@@ -1,0 +1,361 @@
+#!/bin/bash
+
+# Enhanced version with multiple fallback detection methods
+VERBOSE=false
+AGGRESSIVE=false
+
+# Parse options
+while getopts "va" opt; do
+  case $opt in
+    v) VERBOSE=true ;;
+    a) AGGRESSIVE=true ;;
+    *) echo "Usage: $0 [-v (verbose)] [-a (aggressive - try harder)]"; exit 1 ;;
+  esac
+done
+
+# Extended MIME type to extension mapping
+get_extension() {
+  local mimetype="$1"
+  case "$mimetype" in
+    # Images
+    image/jpeg) echo "jpg" ;;
+    image/png) echo "png" ;;
+    image/gif) echo "gif" ;;
+    image/webp) echo "webp" ;;
+    image/svg+xml) echo "svg" ;;
+    image/tiff) echo "tiff" ;;
+    image/bmp) echo "bmp" ;;
+    image/x-icon) echo "ico" ;;
+    image/heic) echo "heic" ;;
+    image/heif) echo "heif" ;;
+    image/avif) echo "avif" ;;
+    
+    # Videos
+    video/mp4) echo "mp4" ;;
+    video/x-matroska) echo "mkv" ;;
+    video/webm) echo "webm" ;;
+    video/quicktime) echo "mov" ;;
+    video/x-msvideo) echo "avi" ;;
+    video/x-flv) echo "flv" ;;
+    video/mpeg) echo "mpeg" ;;
+    video/3gpp) echo "3gp" ;;
+    video/x-m4v) echo "m4v" ;;
+    
+    # Audio
+    audio/mpeg) echo "mp3" ;;
+    audio/mp4) echo "m4a" ;;
+    audio/x-m4a) echo "m4a" ;;
+    audio/aac) echo "aac" ;;
+    audio/flac) echo "flac" ;;
+    audio/x-flac) echo "flac" ;;
+    audio/wav) echo "wav" ;;
+    audio/x-wav) echo "wav" ;;
+    audio/ogg) echo "ogg" ;;
+    audio/opus) echo "opus" ;;
+    audio/webm) echo "weba" ;;
+    audio/x-ms-wma) echo "wma" ;;
+    audio/aiff) echo "aiff" ;;
+    
+    # Documents
+    application/pdf) echo "pdf" ;;
+    application/epub+zip) echo "epub" ;;
+    application/x-mobipocket-ebook) echo "mobi" ;;
+    
+    # Archives
+    application/zip) echo "zip" ;;
+    application/x-rar*) echo "rar" ;;
+    application/x-7z-compressed) echo "7z" ;;
+    application/x-tar) echo "tar" ;;
+    application/gzip) echo "gz" ;;
+    application/x-bzip2) echo "bz2" ;;
+    
+    # Text
+    text/plain) echo "txt" ;;
+    text/html) echo "html" ;;
+    text/css) echo "css" ;;
+    text/javascript) echo "js" ;;
+    application/json) echo "json" ;;
+    text/xml) echo "xml" ;;
+    text/markdown) echo "md" ;;
+    
+    *) echo "" ;;
+  esac
+}
+
+# Check magic bytes for common file types
+detect_by_magic_bytes() {
+  local file="$1"
+  
+  # Read first 12 bytes
+  local header=$(xxd -p -l 12 "$file" 2>/dev/null | tr -d '\n')
+  
+  if [ -z "$header" ]; then
+    return 1
+  fi
+  
+  # Check common magic bytes (case insensitive)
+  header=$(echo "$header" | tr '[:upper:]' '[:lower:]')
+  
+  case "$header" in
+    ffd8ff*)           echo "jpg"; return 0 ;;
+    89504e47*)         echo "png"; return 0 ;;
+    474946383[79]61*)  echo "gif"; return 0 ;;
+    52494646*57454250) echo "webp"; return 0 ;;
+    25504446*)         echo "pdf"; return 0 ;;
+    504b0304*)         echo "zip"; return 0 ;;  # Also docx, xlsx, etc
+    1f8b*)             echo "gz"; return 0 ;;
+    425a68*)           echo "bz2"; return 0 ;;
+    377abcaf271c*)     echo "7z"; return 0 ;;
+    526172211a*)       echo "rar"; return 0 ;;
+    # Video formats
+    000000*66747970*)  echo "mp4"; return 0 ;;  # MP4, M4V, M4A
+    1a45dfa3*)         echo "mkv"; return 0 ;;
+    464c56*)           echo "flv"; return 0 ;;
+    # Audio formats  
+    494433*)           echo "mp3"; return 0 ;;  # MP3 with ID3
+    fff[0-9a-f]*)      echo "mp3"; return 0 ;;  # MP3 frame sync
+    664c6143*)         echo "flac"; return 0 ;;
+    4f676753*)         echo "ogg"; return 0 ;;
+    52494646*57415645) echo "wav"; return 0 ;;
+  esac
+  
+  return 1
+}
+
+# Try exiftool for detailed metadata
+detect_with_exiftool() {
+  local file="$1"
+  
+  if ! command -v exiftool &> /dev/null; then
+    return 1
+  fi
+  
+  local filetype=$(exiftool -FileType -s3 "$file" 2>/dev/null)
+  
+  if [ -z "$filetype" ]; then
+    return 1
+  fi
+  
+  # Convert to lowercase extension
+  echo "$filetype" | tr '[:upper:]' '[:lower:]'
+  return 0
+}
+
+# Try ImageMagick's identify for images
+detect_with_imagemagick() {
+  local file="$1"
+  
+  if ! command -v identify &> /dev/null; then
+    return 1
+  fi
+  
+  local format=$(identify -format "%m" "$file" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  
+  if [ -z "$format" ]; then
+    return 1
+  fi
+  
+  # Map common ImageMagick format names
+  case "$format" in
+    jpeg) echo "jpg" ;;
+    *) echo "$format" ;;
+  esac
+  
+  return 0
+}
+
+# Try mediainfo for media files
+detect_with_mediainfo() {
+  local file="$1"
+  
+  if ! command -v mediainfo &> /dev/null; then
+    return 1
+  fi
+  
+  local format=$(mediainfo --Output="General;%Format%" "$file" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  
+  if [ -z "$format" ]; then
+    return 1
+  fi
+  
+  # Map common mediainfo format names
+  case "$format" in
+    mpeg*audio) echo "mp3" ;;
+    matroska) echo "mkv" ;;
+    *) echo "$format" ;;
+  esac
+  
+  return 0
+}
+
+# Use ffprobe to detect media files
+detect_with_ffprobe() {
+  local file="$1"
+  
+  if ! command -v ffprobe &> /dev/null; then
+    return 1
+  fi
+  
+  local format=$(ffprobe -v quiet -print_format json -show_format "$file" 2>/dev/null | \
+                 grep -o '"format_name":"[^"]*"' | cut -d'"' -f4 | head -1)
+  
+  if [ -z "$format" ]; then
+    return 1
+  fi
+  
+  case "$format" in
+    *mp4*|*m4a*|*m4v*|*mov*) echo "mp4" ;;
+    *mkv*|*matroska*) echo "mkv" ;;
+    *webm*) echo "webm" ;;
+    *avi*) echo "avi" ;;
+    *flv*) echo "flv" ;;
+    *mp3*) echo "mp3" ;;
+    *aac*) echo "aac" ;;
+    *flac*) echo "flac" ;;
+    *wav*) echo "wav" ;;
+    *ogg*) echo "ogg" ;;
+    *opus*) echo "opus" ;;
+    *jpeg*|*jpg*) echo "jpg" ;;
+    *png*) echo "png" ;;
+    *gif*) echo "gif" ;;
+    *webp*) echo "webp" ;;
+    *) return 1 ;;
+  esac
+  
+  return 0
+}
+
+# Check if file is plain text
+is_text_file() {
+  local file="$1"
+  
+  # Try to detect if it's a text file
+  if file "$file" | grep -qi "text"; then
+    echo "txt"
+    return 0
+  fi
+  
+  # Check if file is valid UTF-8 (and reasonable size)
+  local size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+  if [ "$size" -lt 1048576 ]; then  # Less than 1MB
+    if iconv -f UTF-8 -t UTF-8 "$file" &>/dev/null && \
+       grep -qI . "$file" 2>/dev/null; then
+      echo "txt"
+      return 0
+    fi
+  fi
+  
+  return 1
+}
+
+# Count successes and failures
+declare -i success_count=0
+declare -i fail_count=0
+declare -i skip_count=0
+
+# Process each file
+for file in *; do
+  # Skip if not a regular file or is this script
+  if [ ! -f "$file" ] || [ "$file" = "$(basename "$0")" ]; then
+    continue
+  fi
+  
+  # Remove any leading dashes from the filename
+  newname=$(echo "$file" | sed 's/^-*//')
+  if [ "$newname" != "$file" ]; then
+    if [ -e "$newname" ]; then
+      echo "File $newname already exists. Skipping rename of $file."
+      file="$newname"
+    else
+      mv -- "$file" "$newname"
+      [ "$VERBOSE" = true ] && echo "Renamed $file to $newname"
+      file="$newname"
+    fi
+  fi
+  
+  # Try method 1: Standard MIME type detection
+  mimetype=$(file --mime-type -b -- "$file")
+  ext=$(get_extension "$mimetype")
+  method="MIME type"
+  
+  # Try method 2: Magic bytes (especially good for octet-stream)
+  if [ -z "$ext" ] || [ "$mimetype" = "application/octet-stream" ]; then
+    ext=$(detect_by_magic_bytes "$file")
+    [ -n "$ext" ] && method="magic bytes"
+  fi
+  
+  # Try method 3: exiftool
+  if [ -z "$ext" ]; then
+    ext=$(detect_with_exiftool "$file")
+    [ -n "$ext" ] && method="exiftool"
+  fi
+  
+  # Try method 4: ImageMagick
+  if [ -z "$ext" ]; then
+    ext=$(detect_with_imagemagick "$file")
+    [ -n "$ext" ] && method="ImageMagick"
+  fi
+  
+  # Try method 5: mediainfo
+  if [ -z "$ext" ]; then
+    ext=$(detect_with_mediainfo "$file")
+    [ -n "$ext" ] && method="mediainfo"
+  fi
+  
+  # Try method 6: ffprobe
+  if [ -z "$ext" ]; then
+    ext=$(detect_with_ffprobe "$file")
+    [ -n "$ext" ] && method="ffprobe"
+  fi
+  
+  # Try method 7: Text file detection
+  if [ -z "$ext" ]; then
+    ext=$(is_text_file "$file")
+    [ -n "$ext" ] && method="text detection"
+  fi
+  
+  # If still no extension found, report and skip
+  if [ -z "$ext" ]; then
+    echo "❌ Unknown file type for $file (MIME: $mimetype). Skipping."
+    ((fail_count++))
+    continue
+  fi
+  
+  # If the file doesn't already end with the correct extension, rename it
+  if [[ "$file" != *.$ext ]]; then
+    newfile="${file}.${ext}"
+    
+    if [ -e "$newfile" ]; then
+      echo "⚠️  Target file $newfile already exists. Skipping renaming of $file."
+      ((skip_count++))
+      continue
+    fi
+    
+    mv -- "$file" "$newfile"
+    echo "✅ Renamed $file to $newfile (detected via $method)"
+    ((success_count++))
+  else
+    [ "$VERBOSE" = true ] && echo "⏭️  $file already has the correct extension ($ext)"
+    ((skip_count++))
+  fi
+done
+
+# Print summary
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "Summary:"
+echo "  ✅ Successfully renamed: $success_count"
+echo "  ⏭️  Skipped (already correct): $skip_count"
+echo "  ❌ Failed (unknown type): $fail_count"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# Suggest tools if failures occurred
+if [ $fail_count -gt 0 ]; then
+  echo ""
+  echo "💡 To improve detection, consider installing:"
+  ! command -v exiftool &> /dev/null && echo "   • exiftool (brew install exiftool)"
+  ! command -v ffprobe &> /dev/null && echo "   • ffmpeg (brew install ffmpeg)"
+  ! command -v identify &> /dev/null && echo "   • ImageMagick (brew install imagemagick)"
+  ! command -v mediainfo &> /dev/null && echo "   • mediainfo (brew install mediainfo)"
+fi
+
