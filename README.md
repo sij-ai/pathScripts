@@ -13,7 +13,13 @@ git clone https://sij.ai/sij/pathScripts.git
 cd pathScripts
 ```
 
-2. Add to your system PATH:
+2. Install Python dependencies (optional but recommended):
+
+```bash
+pip install -r requirements.txt
+```
+
+3. Add to your system PATH:
 
 macOS / ZSH:
 ```bash
@@ -27,7 +33,7 @@ echo "export PATH=\"\$PATH:$PWD\"" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-3. Make scripts executable:
+4. Make scripts executable:
 
 ```bash
 chmod +x *
@@ -97,7 +103,7 @@ Renames files in the current directory by splitting camelCase, PascalCase, and o
   - Preserves file extensions.
   - Splits on capital letters and numbers intelligently.
 - **Word Detection**:
-  - Uses NLTK’s English word corpus and WordNet to identify valid words.
+  - Uses NLTK's English word corpus and WordNet to identify valid words.
   - Common words like "and", "the", "of" are always treated as valid.
 - **Automatic Renaming**:
   - Processes all files in the current directory (ignores hidden files).
@@ -136,63 +142,172 @@ The Weird and the Eerie ep 7.aax
 
 ### Notes
 - Hidden files (starting with `.`) are skipped.
-- If a word isn’t found in the dictionary, it’s left unchanged.
+- If a word isn't found in the dictionary, it's left unchanged.
 - File extensions are preserved during renaming.
 
---- 
+---
 
-## 📦 `deps` - Unified Python Dependency Manager
+## 📋 `codebase` - Source Code Documentation Generator
 
-A single script that analyzes `import` statements in .py files and installs dependencies using mamba/conda or pip.
+Recursively scans directories and generates markdown-formatted documentation of your codebase, suitable for providing context to LLMs or creating project documentation.
+
+### Features
+
+- **Smart File Detection**:
+  - Automatically detects and processes text files
+  - Skips binary files and common build artifacts
+  - Respects `.gitignore` patterns
+  - Excludes common directories (node_modules, .git, __pycache__, etc.)
+
+- **Markdown Output**:
+  - Generates clean markdown with proper syntax highlighting
+  - Organizes files with headers showing relative paths
+  - Uses appropriate language identifiers for code blocks
+
+- **Flexible Filtering**:
+  - Filter by file extensions (e.g., `.py`, `.js`)
+  - Custom directory exclusions with `--exclude`
+  - Optional gitignore bypass with `--no-gitignore`
 
 ### Usage
 ```bash
-deps <subcommand> ...
+codebase [extensions...] [--exclude dir1 dir2...] [--no-gitignore]
+```
+
+### Examples
+```bash
+# Document all text files in current directory
+codebase
+
+# Only Python and JavaScript files
+codebase .py .js
+
+# Exclude specific directories
+codebase --exclude tests docs
+
+# Process everything, ignoring .gitignore
+codebase --no-gitignore
+
+# Python files, excluding venv and tests
+codebase .py --exclude venv tests
+```
+
+### Output Format
+```markdown
+# Code Contents for myproject
+
+## ./src/main.py
+
+​```python
+import sys
+
+def main():
+    print("Hello, world!")
+​```
+
+## ./src/utils.py
+
+​```python
+def helper():
+    return True
+​```
+```
+
+### Notes
+- Outputs to **stdout** - redirect to a file if needed: `codebase > docs.md`
+- Summary information printed to **stderr** (won't pollute redirected output)
+- Default exclusions include: `node_modules`, `.git`, `__pycache__`, `venv`, `.env`, `build`, `dist`, `.next`, `.nuxt`, `target`, `bin`, `obj`
+- Perfect for creating context files for Claude, ChatGPT, or other LLMs
+
+--- 
+
+## 📦 `deps` - Python Dependency Manager with Smart Detection
+
+Automatically discovers, manages, and installs Python dependencies by analyzing import statements in your code. Detects Python files by both `.py` extension and shebang, making it perfect for scripts in your PATH.
+
+### Features
+
+- **Smart Python File Detection**:
+  - Finds `.py` files
+  - Detects Python scripts by shebang (`#!/usr/bin/env python3`)
+  - Reads first 64KB safely to identify Python files
+
+- **Accurate Import Parsing**:
+  - Uses Python's AST parser for reliable import detection
+  - Filters out built-in modules automatically
+  - Applies known package name corrections (e.g., `bs4` → `beautifulsoup4`)
+  - Validates module names to avoid false positives
+
+- **Flexible Installation**:
+  - Tries `mamba` first (if in conda environment)
+  - Falls back to `conda` if mamba unavailable
+  - Uses `pip` as final fallback or with `--no-conda`
+  - Checks if packages already installed before attempting installation
+
+- **Clean Output**:
+  - Generates sorted, deduplicated `requirements.txt`
+  - Separates unavailable packages into `missing-packages.txt`
+  - Checks PyPI availability before categorizing
+
+### Usage
+```bash
+deps <subcommand> [options]
 ```
 
 #### Subcommands
 
-1. **`ls`**  
-   Analyzes `.py` files for external imports:
-   - Writes PyPI-available packages to `requirements.txt`.
-   - Writes unavailable packages to `missing-packages.txt`.
+**`deps ls`** - List and categorize imports
 
-   **Examples**:
-   ```bash
-   deps ls            # Analyze current directory (no recursion)
-   deps ls -r         # Recursively analyze current directory
-   deps ls src        # Analyze a 'src' folder
-   deps ls -r src     # Recursively analyze 'src'
-   ```
+```bash
+deps ls              # Scan current directory (non-recursive)
+deps ls -r           # Recursively scan current directory  
+deps ls src          # Scan specific directory
+deps ls -r src       # Recursively scan specific directory
+deps ls script.py    # Analyze single file
+```
 
-2. **`install`**  
-   Installs Python packages either by analyzing local imports or from explicit arguments.  
-   - **Conda Environment Detection**: If in a conda environment, tries `mamba` (if installed), else `conda`.  
-   - **Fallback** to `pip` if conda tool fails or is unavailable.  
-   - **`--no-conda`**: Skip conda/mamba entirely and go straight to pip.
+**`deps install`** - Install dependencies
 
-   **Examples**:
-   ```bash
-   deps install            # Analyze current folder, install discovered packages (no recursion)
-   deps install -r         # Same as above but recursive
-   deps install requests   # Directly install 'requests'
-   deps install script.py  # Analyze and install packages from 'script.py'
-   deps install -R requirements.txt  # Install from a requirements file
-   deps install requests --no-conda  # Skip conda/mamba, use pip only
-   ```
+```bash
+deps install                    # Auto-scan and install (current dir)
+deps install -r                 # Auto-scan and install (recursive)
+deps install requests flask     # Install specific packages
+deps install script.py          # Install imports from a script
+deps install -R requirements.txt # Install from requirements file
+deps install requests --no-conda # Force pip-only installation
+```
 
 ### How It Works
-- **Scanning Imports**: Locates `import ...` and `from ... import ...` lines in `.py` files, skipping built-in modules.  
-- **PyPI Check**: Uses `urllib` to confirm package availability at `pypi.org`.  
-- **Requirements & Missing Packages**: If you run `deps ls`, discovered imports go into `requirements.txt` (available) or `missing-packages.txt` (unavailable).  
-- **Installation**: For `deps install`:
-  - If no extra arguments, it auto-discovers imports in the current directory (optionally with `-r`) and installs only PyPI-available ones.  
-  - If passed packages, `.py` files, or `-R <reqfile>`, it installs those specifically.  
-  - By default, tries conda environment tools first (mamba or conda) if in a conda environment, otherwise pip.  
+
+1. **File Discovery**: Recursively finds Python files by extension or shebang
+2. **Import Extraction**: Uses AST parsing to accurately identify imports
+3. **Filtering**: Removes built-in modules and applies name corrections
+4. **PyPI Validation**: Checks package availability on PyPI
+5. **Categorization**: Sorts into `requirements.txt` (available) and `missing-packages.txt` (unavailable)
+6. **Installation**: Intelligently chooses mamba/conda/pip based on environment
+
+### Examples
+
+```bash
+# Generate requirements from all Python scripts in your PATH directory
+cd ~/scripts
+deps ls -r
+
+# Install all detected dependencies
+deps install -r
+
+# Quick workflow for a new script
+deps install myscript.py
+
+# Update requirements when you add imports
+deps ls -r  # Automatically sorts and deduplicates
+```
 
 ### Notes
-- If `mamba` or `conda` is available in your environment, `deps install` will prefer that. Otherwise, it uses pip.  
-- You can run `deps ls` repeatedly to keep updating `requirements.txt` and `missing-packages.txt`.
+- Multiple runs of `deps ls` append new packages and maintain alphabetical sorting
+- Import name corrections handled automatically (see `KNOWN_CORRECTIONS` in source)
+- Respects conda environment - won't use conda commands outside conda environments
+- Built-in modules list includes `__future__` and all standard library modules
 
 ---
 
