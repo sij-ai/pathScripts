@@ -1,0 +1,10 @@
+PyPDF2
+bs4
+easyocr
+fontTools
+magic_pdf
+mlx
+mlx_audio
+newspaper4k
+nltk
+numpy

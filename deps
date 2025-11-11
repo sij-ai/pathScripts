@@ -7,12 +7,14 @@ import subprocess
 import sys
 import urllib.request
 import urllib.error
+import ast  # Add this for better Python parsing
 
 ############################
 # Built-in, Known Corrections, Exclusions
 ############################
 
 BUILTIN_MODULES = {
+    '__future__',  # ADD THIS
     'abc', 'aifc', 'argparse', 'array', 'ast', 'asynchat', 'asyncio', 'asyncore', 'atexit',
     'audioop', 'base64', 'bdb', 'binascii', 'binhex', 'bisect', 'builtins', 'bz2', 'calendar',
     'cgi', 'cgitb', 'chunk', 'cmath', 'cmd', 'code', 'codecs', 'codeop', 'collections', 'colorsys',
@@ -77,10 +79,6 @@ def in_conda_env():
     typically indicated by CONDA_DEFAULT_ENV or other variables.
     """
     return "CONDA_DEFAULT_ENV" in os.environ
-
-# We'll detect once at runtime (if in a conda env and skip_conda=False):
-# we either pick 'mamba' if available, else 'conda' if available, else None
-PREFERRED_CONDA_TOOL = None
 
 def detect_conda_tool(skip_conda=False):
     """
@@ -186,7 +184,7 @@ def is_python_file(filepath):
         return False
 
 ############################
-# Parsing Python Imports
+# Parsing Python Imports (IMPROVED)
 ############################
 
 def process_requirements_file(file_path):
@@ -201,26 +199,83 @@ def process_requirements_file(file_path):
 def process_python_file(file_path):
     """
     Return a set of external imports (not built-in or excluded).
+    Uses AST parsing for accurate import detection.
     Applies known corrections to recognized package names.
     """
     imports = set()
-    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-        content = f.read()
-
-    for line in content.split('\n'):
-        line = line.strip()
-        if line.startswith(('import ', 'from ')) and not line.startswith('#'):
-            if line.startswith('import '):
-                modules = line.replace('import ', '').split(',')
-                for mod in modules:
-                    mod = re.sub(r'\s+as\s+\w+', '', mod).split('.')[0].strip()
-                    if mod and not mod.isupper() and mod not in EXCLUDED_NAMES and mod not in BUILTIN_MODULES:
-                        imports.add(KNOWN_CORRECTIONS.get(mod, mod))
-            elif line.startswith('from '):
-                mod = line.split(' ')[1].split('.')[0].strip()
-                if mod and not mod.isupper() and mod not in EXCLUDED_NAMES and mod not in BUILTIN_MODULES:
-                    imports.add(KNOWN_CORRECTIONS.get(mod, mod))
-
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            content = f.read()
+        
+        # Try to parse with AST for accurate import detection
+        try:
+            tree = ast.parse(content, filename=file_path)
+            
+            for node in ast.walk(tree):
+                # Handle 'import module' and 'import module as alias'
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        module_name = alias.name.split('.')[0]
+                        if (module_name and 
+                            module_name.isidentifier() and 
+                            not module_name.isupper() and
+                            module_name not in EXCLUDED_NAMES and 
+                            module_name not in BUILTIN_MODULES):
+                            imports.add(KNOWN_CORRECTIONS.get(module_name, module_name))
+                
+                # Handle 'from module import ...'
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        module_name = node.module.split('.')[0]
+                        if (module_name and 
+                            module_name.isidentifier() and
+                            not module_name.isupper() and
+                            module_name not in EXCLUDED_NAMES and 
+                            module_name not in BUILTIN_MODULES):
+                            imports.add(KNOWN_CORRECTIONS.get(module_name, module_name))
+        
+        except SyntaxError:
+            # If AST parsing fails, fall back to regex (for invalid Python files)
+            print(f"Warning: Could not parse {file_path} with AST, using fallback regex")
+            for line in content.split('\n'):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                # Remove inline comments
+                if '#' in line:
+                    line = line.split('#')[0].strip()
+                
+                if line.startswith('import '):
+                    import_part = line[7:].strip()
+                    modules = import_part.split(',')
+                    for mod in modules:
+                        if ' as ' in mod:
+                            mod = mod.split(' as ')[0]
+                        mod = mod.split('.')[0].strip()
+                        # Only accept valid Python identifiers
+                        if (mod and 
+                            mod.isidentifier() and
+                            not mod.isupper() and
+                            mod not in EXCLUDED_NAMES and 
+                            mod not in BUILTIN_MODULES):
+                            imports.add(KNOWN_CORRECTIONS.get(mod, mod))
+                
+                elif line.startswith('from '):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        mod = parts[1].split('.')[0]
+                        if (mod and 
+                            mod.isidentifier() and
+                            not mod.isupper() and
+                            mod not in EXCLUDED_NAMES and 
+                            mod not in BUILTIN_MODULES):
+                            imports.add(KNOWN_CORRECTIONS.get(mod, mod))
+    
+    except Exception as e:
+        print(f"Warning: Error processing {file_path}: {e}")
+    
     return imports
 
 def find_imports_in_path(path, recurse=False):
@@ -268,7 +323,7 @@ def check_library_on_pypi(library):
     url = f"https://pypi.org/pypi/{library}/json"
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:
-            return (resp.status == 200)  # 200 => available
+            return (resp.status == 200)
     except (urllib.error.URLError, urllib.error.HTTPError, ValueError):
         return False
 
@@ -329,8 +384,7 @@ def subcmd_ls(parsed_args):
     for imp in sorted(imports):
         print(f" - {imp}")
 
-    # Now we replicate the logic of import_finder:
-    # If on PyPI => requirements.txt; else => missing-packages.txt
+    # Check PyPI availability and categorize
     for lib in sorted(imports):
         if check_library_on_pypi(lib):
             append_to_file(lib, 'requirements.txt')
@@ -361,7 +415,6 @@ def subcmd_install(parsed_args):
 
     # If user typed no leftover arguments or only the recursion flag, we do the "auto-scan & install" mode
     if not parsed_args.packages:
-        # Means: "deps install" or "deps install -r"
         imports_found = find_imports_in_path('.', recurse=is_recursive)
         if not imports_found:
             print("No imports found in current directory.")
@@ -461,11 +514,7 @@ def main():
         nargs='*',
         help=(
             "Direct package names, Python files, or '-R <reqfile>'. If empty, scans current dir; "
-            "if combined with -r, scans recursively. Example usage:\n"
-            "  deps install requests flask\n"
-            "  deps install script.py\n"
-            "  deps install -R requirements.txt\n"
-            "  deps install -r   (recursively scan current dir)\n"
+            "if combined with -r, scans recursively."
         )
     )
     install_parser.set_defaults(func=subcmd_install)
