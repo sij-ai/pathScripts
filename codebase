@@ -2,6 +2,11 @@
 
 import os
 import sys
+try:
+    import pathspec
+except ImportError:
+    print("Error: pathspec library not found. Install it with: pip install pathspec", file=sys.stderr)
+    sys.exit(1)
 
 def is_binary(file_path):
     """
@@ -35,6 +40,28 @@ def is_binary(file_path):
     except Exception as e:
         print(f"Error reading file {file_path}: {e}", file=sys.stderr)
         return True  # Treat unreadable files as binary for safety
+
+def load_gitignore(base_directory):
+    """
+    Loads .gitignore patterns from the base directory.
+    Returns a PathSpec object that can be used to match paths.
+    """
+    gitignore_path = os.path.join(base_directory, '.gitignore')
+    
+    if not os.path.exists(gitignore_path):
+        # Return an empty PathSpec if no .gitignore exists
+        return pathspec.PathSpec.from_lines('gitwildmatch', [])
+    
+    try:
+        with open(gitignore_path, 'r', encoding='utf-8') as f:
+            patterns = f.read().splitlines()
+        
+        # Create PathSpec using gitwildmatch pattern (Git's pattern style)
+        spec = pathspec.PathSpec.from_lines('gitwildmatch', patterns)
+        return spec
+    except Exception as e:
+        print(f"Error reading .gitignore: {e}", file=sys.stderr)
+        return pathspec.PathSpec.from_lines('gitwildmatch', [])
 
 def get_language_from_extension(file_path):
     """
@@ -118,7 +145,7 @@ def should_exclude_directory(dir_path, exclude_dirs):
     dir_name = os.path.basename(dir_path)
     return dir_name in exclude_dirs
 
-def process_files_in_directory(directory, extensions=None, exclude_dirs=None):
+def process_files_in_directory(directory, extensions=None, exclude_dirs=None, gitignore_spec=None):
     """
     Recursively processes all text files (optionally filtered by extensions) within the directory
     and prints their contents with markdown formatting.
@@ -127,14 +154,46 @@ def process_files_in_directory(directory, extensions=None, exclude_dirs=None):
         exclude_dirs = set()
     
     total_files = 0
+    ignored_items = set()
     
     for root, dirs, files in os.walk(directory):
-        # Remove excluded directories from dirs list to prevent os.walk from entering them
-        dirs[:] = [d for d in dirs if not should_exclude_directory(os.path.join(root, d), exclude_dirs)]
+        # Get relative path for gitignore matching
+        root_relative = os.path.relpath(root, directory)
+        if root_relative == '.':
+            root_relative = ''
         
+        # Check directories against gitignore and exclude list
+        dirs_to_remove = []
+        for d in dirs:
+            dir_path = os.path.join(root, d)
+            dir_relative = os.path.relpath(dir_path, directory)
+            
+            # Check exclude list
+            if should_exclude_directory(dir_path, exclude_dirs):
+                dirs_to_remove.append(d)
+                ignored_items.add(f"{dir_relative}/ (excluded)")
+                continue
+            
+            # Check gitignore (add trailing slash for directory matching)
+            if gitignore_spec and gitignore_spec.match_file(dir_relative + '/'):
+                dirs_to_remove.append(d)
+                ignored_items.add(f"{dir_relative}/ (gitignored)")
+                continue
+        
+        # Remove excluded/ignored directories from traversal
+        for d in dirs_to_remove:
+            dirs.remove(d)
+        
+        # Process files
         for file_name in files:
             file_path = os.path.join(root, file_name)
-
+            file_relative = os.path.relpath(file_path, directory)
+            
+            # Check against gitignore
+            if gitignore_spec and gitignore_spec.match_file(file_relative):
+                ignored_items.add(f"{file_relative} (gitignored)")
+                continue
+            
             # Skip binary files
             if is_binary(file_path):
                 continue
@@ -147,15 +206,16 @@ def process_files_in_directory(directory, extensions=None, exclude_dirs=None):
             print_file_contents(file_path, directory)
             total_files += 1
 
-    return total_files
+    return total_files, ignored_items
 
 def parse_arguments():
     """
     Parse command line arguments.
-    Returns: (extensions, exclude_dirs)
+    Returns: (extensions, exclude_dirs, use_gitignore)
     """
     extensions = []
     exclude_dirs = set()
+    use_gitignore = True  # Default to using gitignore
     
     i = 1
     while i < len(sys.argv):
@@ -165,16 +225,19 @@ def parse_arguments():
             i += 1
             if i < len(sys.argv):
                 exclude_dirs.add(sys.argv[i])
+        elif arg == '--no-gitignore':
+            # Disable gitignore processing
+            use_gitignore = False
         else:
             # Regular extension argument
             extensions.append(arg.lower())
         i += 1
     
-    return extensions if extensions else None, exclude_dirs
+    return extensions if extensions else None, exclude_dirs, use_gitignore
 
 if __name__ == "__main__":
     # Parse command line arguments
-    extensions, exclude_dirs = parse_arguments()
+    extensions, exclude_dirs, use_gitignore = parse_arguments()
     
     # Add common directories to exclude by default
     default_excludes = {
@@ -187,17 +250,37 @@ if __name__ == "__main__":
     # Get the current working directory
     current_dir = os.getcwd()
     
+    # Load .gitignore if requested
+    gitignore_spec = None
+    if use_gitignore:
+        gitignore_spec = load_gitignore(current_dir)
+    
     # Print header information to stderr
     print(f"# Code Contents for {os.path.basename(current_dir)}", file=sys.stderr)
     if extensions:
         print(f"Filtering by extensions: {', '.join(extensions)}", file=sys.stderr)
     if exclude_dirs:
         print(f"Excluding directories: {', '.join(sorted(exclude_dirs))}", file=sys.stderr)
+    if use_gitignore:
+        print("Using .gitignore patterns", file=sys.stderr)
     print("", file=sys.stderr)
     
     # Process files and print contents
-    total_files = process_files_in_directory(current_dir, extensions, exclude_dirs)
+    total_files, ignored_items = process_files_in_directory(
+        current_dir, 
+        extensions, 
+        exclude_dirs,
+        gitignore_spec
+    )
     
     # Print summary to stderr
+    print("", file=sys.stderr)
     print(f"Processed {total_files} files", file=sys.stderr)
+    
+    if ignored_items:
+        print("", file=sys.stderr)
+        print("Ignored files and folders:", file=sys.stderr)
+        for item in sorted(ignored_items):
+            print(f"  - {item}", file=sys.stderr)
+
 
