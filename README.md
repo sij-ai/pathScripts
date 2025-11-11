@@ -13,7 +13,7 @@ git clone https://sij.ai/sij/pathScripts.git
 cd pathScripts
 ```
 
-2. Install Python dependencies (optional but recommended):
+2. Install all Python dependencies (optional; can also install dependencies for scripts individually):
 
 ```bash
 pip install -r requirements.txt
@@ -21,22 +21,16 @@ pip install -r requirements.txt
 
 3. Add to your system PATH:
 
-macOS / ZSH:
+ZSH (macOS default):
 ```bash
 echo "export PATH=\"\$PATH:$PWD\"" >> ~/.zshrc
 source ~/.zshrc
 ```
 
-Linux / Bash:
+Bash:
 ```bash
 echo "export PATH=\"\$PATH:$PWD\"" >> ~/.bashrc
 source ~/.bashrc
-```
-
-4. Make scripts executable:
-
-```bash
-chmod +x *
 ```
 
 ---
@@ -311,6 +305,186 @@ deps ls -r  # Automatically sorts and deduplicates
 
 ---
 
+## 🎵 `flacsplit` - FLAC/CUE Splitting Tool
+
+Splits FLAC audio files using CUE sheets into individual tracks with comprehensive validation and error handling.
+
+### Setup
+```bash
+brew install shntool flac  # macOS
+# or
+sudo apt-get install shntool flac  # Debian/Ubuntu
+```
+
+### Usage
+```bash
+flacsplit [OPTIONS] [directory]
+```
+
+### Key Features
+- **Smart Processing**:
+  - Validates CUE sheets before processing
+  - Checks available disk space
+  - Cleans up on failure
+  - Progress tracking with colored output
+
+- **Flexible Options**:
+  - Custom track naming formats
+  - Dry-run mode to preview operations
+  - Optional deletion of source files
+  - Force overwrite of existing output
+
+- **Safety Features**:
+  - CUE file validation (optional)
+  - Disk space verification
+  - Existing directory protection
+  - Automatic cleanup on errors
+
+### Options
+```
+-f, --force             Overwrite existing output directories
+-v, --verbose           Enable verbose output
+-n, --dry-run           Preview operations without executing
+-t, --format FORMAT     Track naming format (default: "%n - %t")
+-d, --delete            Delete original FLAC/CUE after successful split
+--skip-validation       Skip CUE file validation
+-h, --help              Show help message
+--version               Show version information
+```
+
+### Examples
+```bash
+# Preview what would happen
+flacsplit -n ~/Music/Albums
+
+# Process with custom track naming
+flacsplit -t "%02n. %t" ~/Music/Albums
+
+# Verbose mode with force overwrite
+flacsplit -f -v ~/Music/Albums
+
+# Delete originals after splitting
+flacsplit -d ~/Music/Albums
+
+# Skip CUE validation for problematic files
+flacsplit --skip-validation ~/Music/Albums
+```
+
+### Track Naming Format
+Use standard `shnsplit` format codes:
+- `%n` - Track number
+- `%t` - Track title
+- `%a` - Artist name
+- `%p` - Performer
+
+Example: `"%02n. %a - %t"` → `01. Artist - Title.flac`
+
+### Notes
+- Default output: `<album>_tracks/` subdirectory
+- CUE files must have the same base name as the FLAC file
+- Always test with `-n` (dry-run) first
+- Original files are preserved by default
+
+---
+
+## 🔄 `get` - Git Clone with Auto-Environment Setup
+
+Clones a git repository and automatically creates a conda/mamba environment with dependencies installed.
+
+### Features
+- Clones any git repository
+- Creates conda environment named after the repo
+- Auto-installs from `setup.py` if present
+- Auto-installs from `requirements.txt` if present
+- Activates the environment after setup
+
+### Usage
+```bash
+get <repository_url>
+```
+
+### Examples
+```bash
+# Clone and set up a Python project
+get https://github.com/user/project.git
+
+# Clone from your own git server
+get https://git.sij.ai/sij/myproject.git
+```
+
+### How It Works
+1. Clones the repository to current directory
+2. Checks for `setup.py` or `requirements.txt`
+3. If found, creates new mamba environment with repo name
+4. Activates the new environment
+5. Installs dependencies via `python setup.py install` (if setup.py exists)
+6. Installs dependencies via `pip install -r requirements.txt` (if requirements.txt exists)
+
+### Notes
+- Requires `mamba` (or `conda`) to be installed
+- Environment name matches repository name (e.g., `myproject.git` → `myproject`)
+- Skips environment setup if no `setup.py` or `requirements.txt` found
+- Useful for quickly cloning and getting started with Python projects
+
+---
+
+## 📁 `gitscan` - Git Repository Scanner
+
+Recursively scans for git repositories and creates a consolidated list. Perfect for setting up bulk repository management with `push` and `pull` scripts.
+
+### Features
+- Finds all git repositories in current directory and subdirectories
+- Excludes hidden directories
+- Removes duplicate entries automatically
+- Outputs to `repos.txt` in current directory
+
+### Usage
+```bash
+gitscan
+```
+
+### Output
+Creates `repos.txt` with repository paths:
+```plaintext
+./project1
+./subfolder/project2
+./workshop/project3
+```
+
+### How It Works
+1. Searches for `.git` directories recursively
+2. Extracts parent directory paths
+3. Sorts and deduplicates
+4. Writes to `repos.txt`
+
+### Integration with `push`/`pull`
+After running `gitscan`, move the output to your home directory:
+```bash
+gitscan
+mv repos.txt ~/.repos.txt
+```
+
+Now `push` and `pull` scripts will manage all discovered repositories!
+
+### Examples
+```bash
+# Scan your projects directory
+cd ~/projects
+gitscan
+
+# Scan and create master repo list
+cd ~/
+gitscan
+mv repos.txt .repos.txt  # For use with push/pull
+```
+
+### Notes
+- Only searches visible directories (skips paths like `./.git/subdir/.git`)
+- Output file is always in current directory
+- Overwrites existing `repos.txt` without prompting
+
+---
+
 ## 📏 `linecount` - Line Counting Tool for Text Files
 
 Recursively counts the total lines in all text files within the current directory, with optional filtering by file extensions.
@@ -365,6 +539,184 @@ sudo murder node
 
 ---
 
+## 📰 `n3k` - Article Extractor and Markdown Formatter
+
+Fetches web articles and converts them to clean, formatted markdown using dual extraction methods (trafilatura + newspaper4k) for maximum reliability.
+
+### Setup
+```bash
+pip3 install trafilatura newspaper4k requests
+```
+
+### Usage
+```bash
+n3k <article_url>
+```
+
+### Features
+
+- **Dual Extraction Engine**:
+  - Primary: trafilatura (excellent for article text)
+  - Fallback: newspaper4k (better metadata)
+  - Custom headers to bypass basic blocking
+
+- **Clean Output**:
+  - Properly formatted markdown
+  - Author bylines and publication dates
+  - Article images included
+  - Smart paragraph handling
+  - Normalized whitespace
+
+- **Metadata Extraction**:
+  - Title
+  - Authors (multiple supported)
+  - Publication date
+  - Featured image
+  - Source domain
+
+### Examples
+```bash
+# Extract article to stdout
+n3k https://example.com/article
+
+# Save to file
+n3k https://example.com/article > article.md
+
+# Quick read with glow
+n3k https://example.com/article | glow
+```
+
+### Output Format
+```markdown
+# Article Title
+
+*By Author Name*
+
+*Published: 2025-01-15*
+
+![Article Image](https://example.com/image.jpg)
+
+Article content begins here with proper paragraph breaks.
+
+Second paragraph continues...
+```
+
+### How It Works
+1. Fetches URL with browser-like headers
+2. Attempts extraction with trafilatura first
+3. Falls back to newspaper4k if needed
+4. Cleans and normalizes text (removes excessive whitespace)
+5. Formats as markdown with metadata
+
+### Notes
+- Async implementation for better performance
+- Custom user agent to avoid bot detection
+- Handles both text content and metadata gracefully
+- Works with most news sites and blogs
+
+---
+
+## 🔍 `ocr` - Multi-Mode OCR Processor
+
+Intelligent OCR tool that automatically detects input type and processes PDFs or images into searchable PDFs. Handles three distinct modes seamlessly.
+
+### Setup
+```bash
+pip3 install pillow pytesseract PyPDF2 pdf2image
+brew install tesseract poppler  # macOS
+# or
+sudo apt-get install tesseract-ocr poppler-utils  # Debian/Ubuntu
+```
+
+### Usage
+```bash
+ocr <input_path> [OPTIONS]
+```
+
+### Three Processing Modes
+
+#### 1. Single PDF Mode
+Flattens and re-OCRs an existing PDF to make it searchable.
+
+```bash
+ocr document.pdf              # Replaces original by default
+ocr document.pdf -o new.pdf   # Creates new file
+```
+
+#### 2. Folder of Images Mode
+Combines JPG/JPEG images into a single searchable PDF.
+
+```bash
+ocr /path/to/images/                    # Creates images_searchable.pdf
+ocr /path/to/images/ -o output.pdf      # Custom output name
+```
+
+#### 3. Batch PDF Mode
+Processes multiple PDFs in a folder, creating searchable versions of each.
+
+```bash
+ocr /path/to/pdfs/                      # Creates OCRed_PDFs/ subfolder
+ocr /path/to/pdfs/ -o /output/folder/   # Custom output location
+ocr /path/to/pdfs/ --replace            # Overwrites originals
+```
+
+### Options
+```
+<input_path>        PDF file, image folder, or PDF folder (required)
+-o, --output        Output path (interpretation depends on mode)
+-r, --replace       Overwrite original PDF(s)
+-l, --lang          OCR language (default: eng)
+-t, --threads       Number of OCR threads (default: auto-detect)
+-q, --quiet         Suppress output messages
+```
+
+### Examples
+```bash
+# Flatten and OCR a scanned PDF
+ocr scanned_document.pdf
+
+# Create searchable PDF from 50 scanned pages
+ocr ~/scans/document_pages/
+
+# Batch process a folder of PDFs with custom output
+ocr ~/documents/pdfs/ -o ~/documents/searchable/
+
+# Multi-threaded OCR with custom language
+ocr document.pdf -l eng+fra -t 8
+
+# Quiet mode for scripting
+ocr input.pdf -q
+```
+
+### How It Works
+
+**Single PDF/Image Folder:**
+1. Flattens PDF pages to images at 300 DPI (or loads images directly)
+2. Runs Tesseract OCR on each page/image
+3. Generates searchable PDF with embedded text layer
+4. Merges into single output file
+
+**Batch Mode:**
+1. Identifies all PDFs in folder
+2. Processes each independently
+3. Creates output folder with `_searchable` suffix for each
+4. Preserves original filenames
+
+### Performance
+- Parallelized OCR processing (uses all CPU cores by default)
+- Progress indicators for long operations
+- Estimated time remaining on large batches
+
+### Notes
+- Default behavior varies by mode (see `--help` for details)
+- Single PDF mode replaces original unless `-o` specified
+- Image folder mode creates new PDF (never replaces)
+- Batch mode creates new files unless `--replace` used
+- Supported image formats: JPG, JPEG
+- OCR quality depends on image resolution (300+ DPI recommended)
+
+---
+
 ## 🔄 `push` & `pull` - Bulk Git Repository Management
 
 Scripts to automate updates and management of multiple Git repositories.
@@ -378,6 +730,13 @@ Scripts to automate updates and management of multiple Git repositories.
    ~/workshop/Nova/Themes/Neonva/neonva.novaextension
    ~/scripts/pathScripts
    ~/scripts/Swiftbar
+   ```
+
+   **Quick way:** Use `gitscan` to auto-generate the list:
+   ```bash
+   cd ~/projects
+   gitscan
+   mv repos.txt ~/.repos.txt
    ```
 
    - Use `~` for home directory paths or replace it with absolute paths.
@@ -413,6 +772,7 @@ Scripts to automate updates and management of multiple Git repositories.
 - Use absolute paths or ensure `~` is correctly expanded to avoid issues.
 - The scripts skip non-existent directories and invalid Git repositories.
 - `push` will attempt to set the `origin` remote automatically if it is missing.
+- Works perfectly with `gitscan` to auto-discover repositories
 
 ---
 
