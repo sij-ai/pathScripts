@@ -1,4 +1,3 @@
-PyPDF2
 bs4
 easyocr
 fontTools
@@ -8,3 +7,15 @@ mlx_audio
 newspaper4k
 nltk
 numpy
+pathspec
+pdf2image
+pdfplumber
+PyPDF2
+pytesseract
+requests
+selenium
+selenium_stealth
+soundfile
+tqdm
+trafilatura
+webdriver_manager
