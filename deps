@@ -159,6 +159,33 @@ def install_package(package, skip_conda=False):
         print(f"Successfully installed '{package}' via pip.")
 
 ############################
+# Python File Detection
+############################
+
+def is_python_file(filepath):
+    """
+    Check if file is Python by .py extension or python shebang in first 64KB.
+    Returns True if it's a Python file, False otherwise.
+    """
+    # Quick check: .py extension
+    if filepath.endswith('.py'):
+        return True
+    
+    # Check for shebang in first 64KB
+    try:
+        with open(filepath, 'rb') as f:
+            # Read first 64KB (65536 bytes)
+            first_chunk = f.read(65536)
+            
+            # Get first line (shebang line)
+            first_line = first_chunk.split(b'\n', 1)[0]
+            
+            # Check if it contains 'python' (case-insensitive)
+            return b'python' in first_line.lower()
+    except (IOError, OSError, UnicodeDecodeError):
+        return False
+
+############################
 # Parsing Python Imports
 ############################
 
@@ -199,7 +226,8 @@ def process_python_file(file_path):
 def find_imports_in_path(path, recurse=False):
     """
     Finds Python imports in the specified path. If path is a file, parse that file;
-    if path is a dir, parse .py files in that dir. Recurse subdirs if 'recurse=True'.
+    if path is a dir, parse Python files in that dir. Recurse subdirs if 'recurse=True'.
+    Python files are detected by .py extension OR python shebang.
     """
     imports = set()
     if not os.path.exists(path):
@@ -207,7 +235,7 @@ def find_imports_in_path(path, recurse=False):
         return imports
 
     if os.path.isfile(path):
-        if path.endswith('.py'):
+        if is_python_file(path):
             imports.update(process_python_file(path))
         else:
             print(f"Skipping non-Python file: {path}")
@@ -217,12 +245,13 @@ def find_imports_in_path(path, recurse=False):
     if recurse:
         for root, _, filenames in os.walk(path):
             for fn in filenames:
-                if fn.endswith('.py'):
-                    imports.update(process_python_file(os.path.join(root, fn)))
+                fullpath = os.path.join(root, fn)
+                if is_python_file(fullpath):
+                    imports.update(process_python_file(fullpath))
     else:
         for fn in os.listdir(path):
             fullpath = os.path.join(path, fn)
-            if os.path.isfile(fullpath) and fn.endswith('.py'):
+            if os.path.isfile(fullpath) and is_python_file(fullpath):
                 imports.update(process_python_file(fullpath))
 
     return imports
@@ -262,14 +291,31 @@ def append_to_file(line, filename):
         with open(filename, 'a') as f:
             f.write(line + '\n')
 
+def sort_and_deduplicate_file(filename):
+    """
+    Read a file, deduplicate and sort lines alphabetically, then write back.
+    """
+    if not os.path.isfile(filename):
+        return
+    
+    with open(filename, 'r') as f:
+        lines = {l.strip() for l in f.readlines() if l.strip()}
+    
+    # Sort alphabetically (case-insensitive)
+    sorted_lines = sorted(lines, key=str.lower)
+    
+    with open(filename, 'w') as f:
+        for line in sorted_lines:
+            f.write(line + '\n')
+
 ############################
 # Subcommand: ls
 ############################
 
 def subcmd_ls(parsed_args):
     """
-    Gathers imports, displays them, then writes them to requirements.txt or missing-packages.txt
-    just like the original import_finder script did.
+    Gathers imports, displays them, then writes them to requirements.txt or missing-packages.txt.
+    After writing, sorts and deduplicates both files.
     """
     path = parsed_args.path
     recurse = parsed_args.recurse
@@ -291,7 +337,12 @@ def subcmd_ls(parsed_args):
         else:
             append_to_file(lib, 'missing-packages.txt')
 
+    # Sort and deduplicate both files
+    sort_and_deduplicate_file('requirements.txt')
+    sort_and_deduplicate_file('missing-packages.txt')
+
     print("\nWrote results to requirements.txt (PyPI-available) and missing-packages.txt (unavailable).")
+    print("Both files have been sorted and deduplicated.")
 
 ############################
 # Subcommand: install
@@ -303,7 +354,7 @@ def subcmd_install(parsed_args):
     we gather imports from the current dir, check PyPI availability, and install them with conda/mamba/pip
     (unless --no-conda is given).
     
-    Otherwise, if the user typed e.g. '-R <reqfile>', or a .py file, or direct package names, we handle them.
+    Otherwise, if the user typed e.g. '-R <reqfile>', or a Python file, or direct package names, we handle them.
     """
     skip_conda = parsed_args.no_conda
     is_recursive = parsed_args.recurse
@@ -330,7 +381,7 @@ def subcmd_install(parsed_args):
             install_package(pkg, skip_conda=skip_conda)
         return
 
-    # Otherwise, we have leftover items: direct packages, .py files, or "-R" requirements.
+    # Otherwise, we have leftover items: direct packages, Python files, or "-R" requirements.
     leftover_args = parsed_args.packages
     packages_to_install = set()
 
@@ -350,13 +401,10 @@ def subcmd_install(parsed_args):
             else:
                 print("Error: -R requires a file path.")
                 return
-        elif arg.endswith('.py'):
-            # parse imports from that script
-            if os.path.isfile(arg):
-                pkgs = process_python_file(arg)
-                packages_to_install.update(pkgs)
-            else:
-                print(f"File not found: {arg}")
+        elif is_python_file(arg) and os.path.isfile(arg):
+            # parse imports from that Python script
+            pkgs = process_python_file(arg)
+            packages_to_install.update(pkgs)
             i += 1
         else:
             # treat as a direct package name
@@ -396,7 +444,7 @@ def main():
     # Subcommand: install
     install_parser = subparsers.add_parser(
         'install',
-        help="Install packages or dependencies from .py files / current folder / subfolders."
+        help="Install packages or dependencies from Python files / current folder / subfolders."
     )
     install_parser.add_argument(
         '-r', '--recurse',
@@ -412,7 +460,7 @@ def main():
         'packages',
         nargs='*',
         help=(
-            "Direct package names, .py files, or '-R <reqfile>'. If empty, scans current dir; "
+            "Direct package names, Python files, or '-R <reqfile>'. If empty, scans current dir; "
             "if combined with -r, scans recursively. Example usage:\n"
             "  deps install requests flask\n"
             "  deps install script.py\n"
@@ -427,3 +475,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
