@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # Script version
-VERSION="2.1"
+VERSION="2.2"
 
 # Default options
 FORCE=false
 VERBOSE=false
 DRY_RUN=false
 OUTPUT_FORMAT="%n - %t"
-KEEP_ORIGINAL=true
+KEEP_ORIGINAL=false
 SKIP_VALIDATION=false
 
 # Colors for output
@@ -23,14 +23,14 @@ usage() {
     cat << EOF
 Usage: flacsplit [OPTIONS] [directory]
 
-Split FLAC files with CUE sheets into individual tracks.
+Split FLAC/APE files with CUE sheets into individual FLAC tracks.
 
 OPTIONS:
-    -f, --force             Overwrite existing output directories
+    -f, --force             Overwrite existing output files
     -v, --verbose           Enable verbose output
     -n, --dry-run           Show what would be done without executing
     -t, --format FORMAT     Set track naming format (default: "%n - %t")
-    -d, --delete            Delete original FLAC/CUE files after successful split
+    -k, --keep              Keep original audio/CUE files after split
     --skip-validation       Skip CUE file validation
     -h, --help              Show this help message
     --version               Show version information
@@ -38,13 +38,17 @@ OPTIONS:
 ARGUMENTS:
     directory               Directory to process (default: current directory)
 
+SUPPORTED FORMATS:
+    Input:  FLAC (.flac), Monkey's Audio (.ape)
+    Output: FLAC (.flac)
+
 EXAMPLES:
     flacsplit                           # Process current directory
     flacsplit /path/to/albums           # Process specific directory
     flacsplit -f -v ~/Music             # Force overwrite with verbose output
     flacsplit -n ~/Music                # Dry run to see what would happen
     flacsplit -t "%02n. %t" ~/Music     # Custom track naming format
-    flacsplit --skip-validation ~/Music # Skip CUE file validation
+    flacsplit -k ~/Music                # Keep original files after splitting
 
 EOF
     exit 1
@@ -112,28 +116,27 @@ check_deps() {
         fi
     done
     
+    # Check for mac (optional, needed for APE files)
+    if ! command -v mac &> /dev/null; then
+        print_color "$YELLOW" "Warning: 'mac' (Monkey's Audio decoder) not found."
+        print_color "$YELLOW" "APE files will require mac. Install with: brew install mac"
+    fi
+    
     [[ $missing -eq 1 ]] && exit 1
 }
 
-# Function to cleanup on failure
-cleanup_on_failure() {
-    local dir="$1"
-    if [[ -d "$dir" ]] && [[ -z "$(ls -A "$dir")" ]]; then
-        log "Cleaning up empty directory: $dir"
-        rmdir "$dir"
-    fi
-}
-
-# Function to process a single FLAC file
-process_flac() {
-    local flac_file="$1"
-    local cue_file="${flac_file%.*}.cue"
-    local base_name=$(basename "${flac_file%.*}")
-    local dir_name="$(dirname "$flac_file")/${base_name}_tracks"
+# Function to process a single audio file
+process_audio_file() {
+    local audio_file="$1"
+    local cue_file="${audio_file%.*}.cue"
+    local base_name=$(basename "${audio_file%.*}")
+    local dir_name="$(dirname "$audio_file")"
+    local temp_file="${audio_file}.original_temp"
+    local file_ext="${audio_file##*.}"
     
     # Check if CUE file exists
     if [[ ! -f "$cue_file" ]]; then
-        log "Skipping $flac_file (no matching CUE file)"
+        log "Skipping $audio_file (no matching CUE file)"
         return 1
     fi
     
@@ -145,61 +148,77 @@ process_flac() {
         [[ ! $REPLY =~ ^[Yy]$ ]] && return 1
     fi
     
-    # Check if output directory exists
-    if [[ -d "$dir_name" ]] && [[ $FORCE != true ]]; then
-        print_color "$YELLOW" "Skipping $flac_file (output directory exists, use -f to force)"
-        return 1
-    fi
-    
     # Check disk space
-    if ! check_disk_space "$flac_file" "$dir_name"; then
+    if ! check_disk_space "$audio_file" "$dir_name"; then
         return 1
     fi
     
-    print_color "$GREEN" "Processing: $flac_file"
+    print_color "$GREEN" "Processing: $audio_file"
+    log "Format: ${file_ext^^}"
     log "CUE file: $cue_file"
     log "Output directory: $dir_name"
     log "Track format: $OUTPUT_FORMAT"
     
     if [[ $DRY_RUN == true ]]; then
-        print_color "$BLUE" "[DRY RUN] Would split $flac_file into $dir_name"
+        print_color "$BLUE" "[DRY RUN] Would split $audio_file into $dir_name"
+        [[ $KEEP_ORIGINAL != true ]] && print_color "$BLUE" "[DRY RUN] Would delete $audio_file and $cue_file"
         return 0
     fi
     
-    # Create/clean output directory
-    if [[ -d "$dir_name" ]]; then
-        log "Removing existing directory: $dir_name"
-        rm -rf "$dir_name"
-    fi
+    # Count existing FLAC files before split
+    local files_before=$(find "$dir_name" -maxdepth 1 -name "*.flac" -type f 2>/dev/null | wc -l)
     
-    if ! mkdir -p "$dir_name"; then
-        print_color "$RED" "Error: Failed to create directory $dir_name"
+    # Rename original file to temp name to prevent overwriting
+    log "Renaming original file to temporary name: $temp_file"
+    if ! mv "$audio_file" "$temp_file"; then
+        print_color "$RED" "Error: Failed to rename $audio_file"
         return 1
     fi
     
-    # Split the FLAC file
-    log "Running: shnsplit -f '$cue_file' -t '$OUTPUT_FORMAT' -o flac '$flac_file' -d '$dir_name'"
+    # Split the audio file into the same directory
+    log "Running: shnsplit -f '$cue_file' -t '$OUTPUT_FORMAT' -o flac '$temp_file' -d '$dir_name'"
     
-    if ! shnsplit -f "$cue_file" -t "$OUTPUT_FORMAT" -o flac "$flac_file" -d "$dir_name" 2>/dev/null; then
-        print_color "$RED" "Error: Failed to split $flac_file"
-        cleanup_on_failure "$dir_name"
+    # Capture output and errors
+    local split_output
+    local split_exit_code
+    if [[ $VERBOSE == true ]]; then
+        shnsplit -f "$cue_file" -t "$OUTPUT_FORMAT" -o flac "$temp_file" -d "$dir_name"
+        split_exit_code=$?
+    else
+        split_output=$(shnsplit -f "$cue_file" -t "$OUTPUT_FORMAT" -o flac "$temp_file" -d "$dir_name" 2>&1)
+        split_exit_code=$?
+    fi
+    
+    # Count FLAC files after split (excluding temp file)
+    local files_after=$(find "$dir_name" -maxdepth 1 -name "*.flac" -type f ! -name "*.original_temp" 2>/dev/null | wc -l)
+    local track_count=$((files_after - files_before))
+    
+    # Check if we actually got new tracks (more important than exit code)
+    if [[ $track_count -le 0 ]]; then
+        print_color "$RED" "Error: No tracks generated for $audio_file"
+        if [[ -n "$split_output" ]]; then
+            print_color "$RED" "shnsplit output: $split_output"
+        fi
+        # Restore original file on failure
+        log "Restoring original file"
+        mv "$temp_file" "$audio_file"
         return 1
     fi
     
-    # Check if split was successful (output directory should contain files)
-    local track_count=$(find "$dir_name" -name "*.flac" | wc -l)
-    if [[ $track_count -eq 0 ]]; then
-        print_color "$RED" "Error: No tracks generated for $flac_file"
-        cleanup_on_failure "$dir_name"
-        return 1
+    # Warn about non-zero exit but continue if tracks were created
+    if [[ $split_exit_code -ne 0 ]]; then
+        log "Warning: shnsplit exited with code $split_exit_code, but $track_count tracks were created"
     fi
     
     print_color "$GREEN" "✓ Successfully split into $track_count tracks"
     
-    # Delete originals if requested
-    if [[ $KEEP_ORIGINAL != true ]]; then
-        log "Deleting original files: $flac_file, $cue_file"
-        rm "$flac_file" "$cue_file"
+    # Delete originals (or restore if keeping)
+    if [[ $KEEP_ORIGINAL == true ]]; then
+        log "Restoring original file: $audio_file"
+        mv "$temp_file" "$audio_file"
+    else
+        log "Deleting original files: $temp_file, $cue_file"
+        rm "$temp_file" "$cue_file"
     fi
     
     return 0
@@ -211,22 +230,22 @@ process_directory() {
     local count=0
     local total=0
     
-    # Count total FLAC files first
-    while IFS= read -r -d '' flac_file; do
-        local cue_file="${flac_file%.*}.cue"
+    # Count total audio files first (both FLAC and APE)
+    while IFS= read -r -d '' audio_file; do
+        local cue_file="${audio_file%.*}.cue"
         [[ -f "$cue_file" ]] && ((total++))
-    done < <(find "$dir" -type f -name "*.flac" -print0)
+    done < <(find "$dir" -type f \( -name "*.flac" -o -name "*.ape" \) -print0)
     
     if [[ $total -eq 0 ]]; then
-        print_color "$YELLOW" "No FLAC files with matching CUE sheets found in $dir"
+        print_color "$YELLOW" "No FLAC/APE files with matching CUE sheets found in $dir"
         return 0
     fi
     
-    print_color "$BLUE" "Found $total FLAC file(s) with CUE sheets in $dir"
+    print_color "$BLUE" "Found $total audio file(s) with CUE sheets in $dir"
     
-    # Process all FLAC files
-    while IFS= read -r -d '' flac_file; do
-        if process_flac "$flac_file"; then
+    # Process all audio files
+    while IFS= read -r -d '' audio_file; do
+        if process_audio_file "$audio_file"; then
             ((count++))
         fi
         
@@ -235,7 +254,7 @@ process_directory() {
         if [[ $VERBOSE == true ]] && [[ $current -le $total ]]; then
             print_color "$BLUE" "Progress: $current/$total"
         fi
-    done < <(find "$dir" -type f -name "*.flac" -print0)
+    done < <(find "$dir" -type f \( -name "*.flac" -o -name "*.ape" \) -print0)
     
     if [[ $count -eq 0 ]]; then
         print_color "$YELLOW" "No files were processed"
@@ -263,8 +282,8 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_FORMAT="$2"
             shift 2
             ;;
-        -d|--delete)
-            KEEP_ORIGINAL=false
+        -k|--keep)
+            KEEP_ORIGINAL=true
             shift
             ;;
         --skip-validation)
@@ -318,4 +337,3 @@ fi
 
 # Process the directory recursively
 process_directory "$(realpath "$TARGET_DIR")"
-
