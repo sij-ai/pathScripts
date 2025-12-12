@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script version
-VERSION="2.2"
+VERSION="2.3"
 
 # Default options
 FORCE=false
@@ -10,6 +10,9 @@ DRY_RUN=false
 OUTPUT_FORMAT="%n - %t"
 KEEP_ORIGINAL=false
 SKIP_VALIDATION=false
+
+# Global variable for APE handling method
+APE_METHOD="none"
 
 # Colors for output
 RED='\033[0;31m'
@@ -42,6 +45,8 @@ SUPPORTED FORMATS:
     Input:  FLAC (.flac), Monkey's Audio (.ape)
     Output: FLAC (.flac)
 
+NOTE: APE files are converted to FLAC using ffmpeg before splitting.
+
 EXAMPLES:
     flacsplit                           # Process current directory
     flacsplit /path/to/albums           # Process specific directory
@@ -72,9 +77,11 @@ check_disk_space() {
     local output_dir="$2"
     
     local file_size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null)
+    # For APE files, estimate FLAC will be similar size (need extra space for conversion)
+    local required_space=$((file_size * 2))
     local available_space=$(df "$(dirname "$output_dir")" | awk 'NR==2 {print $4 * 1024}')
     
-    if [[ $file_size -gt $available_space ]]; then
+    if [[ $required_space -gt $available_space ]]; then
         print_color "$RED" "Error: Insufficient disk space for $file"
         return 1
     fi
@@ -108,21 +115,52 @@ check_deps() {
     for dep in "${deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             case $dep in
-                shnsplit) print_color "$RED" "Error: 'shnsplit' not found. Install with: brew install shntool" ;;
-                flac) print_color "$RED" "Error: 'flac' not found. Install with: brew install flac" ;;
+                shnsplit) print_color "$RED" "Error: 'shnsplit' not found. Install with: apt install shntool" ;;
+                flac) print_color "$RED" "Error: 'flac' not found. Install with: apt install flac" ;;
                 *) print_color "$RED" "Error: '$dep' not found." ;;
             esac
             missing=1
         fi
     done
     
-    # Check for mac (optional, needed for APE files)
-    if ! command -v mac &> /dev/null; then
-        print_color "$YELLOW" "Warning: 'mac' (Monkey's Audio decoder) not found."
-        print_color "$YELLOW" "APE files will require mac. Install with: brew install mac"
+    [[ $missing -eq 1 ]] && exit 1
+    
+    # Check for APE support (mac or ffmpeg)
+    if command -v mac &> /dev/null; then
+        APE_METHOD="mac"
+        log "Using 'mac' decoder for APE files"
+    elif command -v ffmpeg &> /dev/null; then
+        APE_METHOD="ffmpeg"
+        log "Using 'ffmpeg' for APE file conversion"
+    else
+        APE_METHOD="none"
+        print_color "$YELLOW" "Warning: Neither 'mac' nor 'ffmpeg' found."
+        print_color "$YELLOW" "APE files will be skipped. Install with: apt install ffmpeg"
+    fi
+}
+
+# Function to convert APE to temporary FLAC using ffmpeg
+convert_ape_to_flac() {
+    local ape_file="$1"
+    local temp_flac="${ape_file%.*}.ape_converted.flac"
+    
+    print_color "$BLUE" "Converting APE to FLAC..."
+    log "Output: $temp_flac"
+    
+    if [[ $VERBOSE == true ]]; then
+        if ! ffmpeg -i "$ape_file" -c:a flac "$temp_flac" -y 2>&1; then
+            print_color "$RED" "Error: Failed to convert APE file"
+            return 1
+        fi
+    else
+        if ! ffmpeg -i "$ape_file" -c:a flac "$temp_flac" -y -loglevel error 2>&1; then
+            print_color "$RED" "Error: Failed to convert APE file"
+            return 1
+        fi
     fi
     
-    [[ $missing -eq 1 ]] && exit 1
+    echo "$temp_flac"
+    return 0
 }
 
 # Function to process a single audio file
@@ -131,8 +169,16 @@ process_audio_file() {
     local cue_file="${audio_file%.*}.cue"
     local base_name=$(basename "${audio_file%.*}")
     local dir_name="$(dirname "$audio_file")"
-    local temp_file="${audio_file}.original_temp"
     local file_ext="${audio_file##*.}"
+    local temp_original="${audio_file}.original_temp"
+    local processing_file=""
+    local temp_flac_from_ape=""
+    
+    # Skip APE files if no decoder is available
+    if [[ "${file_ext,,}" == "ape" ]] && [[ $APE_METHOD == "none" ]]; then
+        print_color "$YELLOW" "Skipping $audio_file (no APE decoder available)"
+        return 1
+    fi
     
     # Check if CUE file exists
     if [[ ! -f "$cue_file" ]]; then
@@ -160,48 +206,83 @@ process_audio_file() {
     log "Track format: $OUTPUT_FORMAT"
     
     if [[ $DRY_RUN == true ]]; then
+        if [[ "${file_ext,,}" == "ape" ]] && [[ $APE_METHOD == "ffmpeg" ]]; then
+            print_color "$BLUE" "[DRY RUN] Would convert APE to FLAC"
+        fi
         print_color "$BLUE" "[DRY RUN] Would split $audio_file into $dir_name"
         [[ $KEEP_ORIGINAL != true ]] && print_color "$BLUE" "[DRY RUN] Would delete $audio_file and $cue_file"
         return 0
     fi
     
-    # Count existing FLAC files before split
-    local files_before=$(find "$dir_name" -maxdepth 1 -name "*.flac" -type f 2>/dev/null | wc -l)
-    
-    # Rename original file to temp name to prevent overwriting
-    log "Renaming original file to temporary name: $temp_file"
-    if ! mv "$audio_file" "$temp_file"; then
-        print_color "$RED" "Error: Failed to rename $audio_file"
-        return 1
+    # Handle APE files - convert to FLAC first if using ffmpeg
+    if [[ "${file_ext,,}" == "ape" ]]; then
+        if [[ $APE_METHOD == "ffmpeg" ]]; then
+            # Rename original APE to temp name
+            log "Renaming original APE file to temporary name: $temp_original"
+            if ! mv "$audio_file" "$temp_original"; then
+                print_color "$RED" "Error: Failed to rename $audio_file"
+                return 1
+            fi
+            
+            # Convert APE to FLAC
+            temp_flac_from_ape=$(convert_ape_to_flac "$temp_original")
+            if [[ $? -ne 0 ]] || [[ ! -f "$temp_flac_from_ape" ]]; then
+                print_color "$RED" "Error: APE to FLAC conversion failed"
+                mv "$temp_original" "$audio_file"
+                return 1
+            fi
+            
+            processing_file="$temp_flac_from_ape"
+            log "Conversion complete, processing converted FLAC"
+        else
+            # Using mac decoder - rename original and use directly
+            log "Renaming original file to temporary name: $temp_original"
+            if ! mv "$audio_file" "$temp_original"; then
+                print_color "$RED" "Error: Failed to rename $audio_file"
+                return 1
+            fi
+            processing_file="$temp_original"
+        fi
+    else
+        # FLAC file - rename to temp name
+        log "Renaming original file to temporary name: $temp_original"
+        if ! mv "$audio_file" "$temp_original"; then
+            print_color "$RED" "Error: Failed to rename $audio_file"
+            return 1
+        fi
+        processing_file="$temp_original"
     fi
     
+    # Count existing FLAC files before split
+    local files_before=$(find "$dir_name" -maxdepth 1 -name "*.flac" -type f ! -name "*.original_temp" ! -name "*.ape_converted.flac" 2>/dev/null | wc -l)
+    
     # Split the audio file into the same directory
-    log "Running: shnsplit -f '$cue_file' -t '$OUTPUT_FORMAT' -o flac '$temp_file' -d '$dir_name'"
+    log "Running: shnsplit -f '$cue_file' -t '$OUTPUT_FORMAT' -o flac '$processing_file' -d '$dir_name'"
     
     # Capture output and errors
     local split_output
     local split_exit_code
     if [[ $VERBOSE == true ]]; then
-        shnsplit -f "$cue_file" -t "$OUTPUT_FORMAT" -o flac "$temp_file" -d "$dir_name"
+        shnsplit -f "$cue_file" -t "$OUTPUT_FORMAT" -o flac "$processing_file" -d "$dir_name"
         split_exit_code=$?
     else
-        split_output=$(shnsplit -f "$cue_file" -t "$OUTPUT_FORMAT" -o flac "$temp_file" -d "$dir_name" 2>&1)
+        split_output=$(shnsplit -f "$cue_file" -t "$OUTPUT_FORMAT" -o flac "$processing_file" -d "$dir_name" 2>&1)
         split_exit_code=$?
     fi
     
-    # Count FLAC files after split (excluding temp file)
-    local files_after=$(find "$dir_name" -maxdepth 1 -name "*.flac" -type f ! -name "*.original_temp" 2>/dev/null | wc -l)
+    # Count FLAC files after split (excluding temp files)
+    local files_after=$(find "$dir_name" -maxdepth 1 -name "*.flac" -type f ! -name "*.original_temp" ! -name "*.ape_converted.flac" 2>/dev/null | wc -l)
     local track_count=$((files_after - files_before))
     
-    # Check if we actually got new tracks (more important than exit code)
+    # Check if we actually got new tracks
     if [[ $track_count -le 0 ]]; then
         print_color "$RED" "Error: No tracks generated for $audio_file"
         if [[ -n "$split_output" ]]; then
             print_color "$RED" "shnsplit output: $split_output"
         fi
-        # Restore original file on failure
-        log "Restoring original file"
-        mv "$temp_file" "$audio_file"
+        # Cleanup and restore
+        [[ -f "$temp_flac_from_ape" ]] && rm "$temp_flac_from_ape"
+        [[ -f "$temp_original" ]] && mv "$temp_original" "$audio_file"
         return 1
     fi
     
@@ -212,13 +293,16 @@ process_audio_file() {
     
     print_color "$GREEN" "✓ Successfully split into $track_count tracks"
     
-    # Delete originals (or restore if keeping)
+    # Cleanup temporary files and originals
     if [[ $KEEP_ORIGINAL == true ]]; then
         log "Restoring original file: $audio_file"
-        mv "$temp_file" "$audio_file"
+        [[ -f "$temp_flac_from_ape" ]] && rm "$temp_flac_from_ape"
+        [[ -f "$temp_original" ]] && mv "$temp_original" "$audio_file"
     else
-        log "Deleting original files: $temp_file, $cue_file"
-        rm "$temp_file" "$cue_file"
+        log "Deleting original and temporary files"
+        [[ -f "$temp_flac_from_ape" ]] && rm "$temp_flac_from_ape"
+        [[ -f "$temp_original" ]] && rm "$temp_original"
+        [[ -f "$cue_file" ]] && rm "$cue_file"
     fi
     
     return 0
@@ -233,6 +317,13 @@ process_directory() {
     # Count total audio files first (both FLAC and APE)
     while IFS= read -r -d '' audio_file; do
         local cue_file="${audio_file%.*}.cue"
+        local file_ext="${audio_file##*.}"
+        
+        # Skip APE files if no decoder available
+        if [[ "${file_ext,,}" == "ape" ]] && [[ $APE_METHOD == "none" ]]; then
+            continue
+        fi
+        
         [[ -f "$cue_file" ]] && ((total++))
     done < <(find "$dir" -type f \( -name "*.flac" -o -name "*.ape" \) -print0)
     
@@ -332,6 +423,7 @@ if [[ $VERBOSE == true ]]; then
     echo "  Output format: $OUTPUT_FORMAT"
     echo "  Keep originals: $KEEP_ORIGINAL"
     echo "  Skip validation: $SKIP_VALIDATION"
+    echo "  APE decoder: $APE_METHOD"
     echo
 fi
 
